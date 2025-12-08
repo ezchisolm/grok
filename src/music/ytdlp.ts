@@ -1,4 +1,4 @@
-import { spawn } from 'child_process';
+import { spawn, execSync } from 'child_process';
 import { Readable } from 'stream';
 import { StreamType } from '@discordjs/voice';
 import path from 'path';
@@ -6,6 +6,15 @@ import fs from 'fs';
 
 const YTDLP_PATH = path.resolve(process.cwd(), 'yt-dlp');
 const COOKIES_PATH = path.resolve(process.cwd(), 'cookies.txt');
+
+// Get the full path to Bun
+let BUN_PATH = 'bun';
+try {
+    BUN_PATH = execSync('which bun', { encoding: 'utf-8' }).trim();
+    console.log(`[yt-dlp] Found Bun at: ${BUN_PATH}`);
+} catch (e) {
+    console.warn('[yt-dlp] Could not find Bun path, using "bun" and hoping it\'s in PATH');
+}
 
 
 
@@ -22,10 +31,10 @@ export async function getVideoInfo(url: string): Promise<VideoDetails> {
         // Add cookies if available (use web client for better compatibility)
         if (fs.existsSync(COOKIES_PATH)) {
             args.push('--cookies', COOKIES_PATH);
-            args.push('--extractor-args', 'youtube:js_runtime=bun');
+            args.push('--extractor-args', `youtube:js_runtime=${BUN_PATH}`);
         } else {
             // Without cookies, use android_music client to avoid bot detection
-            args.push('--extractor-args', 'youtube:player_client=android_music;js_runtime=bun');
+            args.push('--extractor-args', `youtube:player_client=android_music;js_runtime=${BUN_PATH}`);
         }
         
         args.push(url);
@@ -83,9 +92,9 @@ export function createStream(url: string): { stream: Readable; type: StreamType 
 
     if (fs.existsSync(COOKIES_PATH)) {
         args.push('--cookies', COOKIES_PATH);
-        args.push('--extractor-args', 'youtube:js_runtime=bun');
+        args.push('--extractor-args', `youtube:js_runtime=${BUN_PATH}`);
     } else {
-        args.push('--extractor-args', 'youtube:player_client=android_music;js_runtime=bun');
+        args.push('--extractor-args', `youtube:player_client=android_music;js_runtime=${BUN_PATH}`);
     }
     
     args.push('-o', '-', url);
@@ -127,9 +136,9 @@ export async function search(query: string): Promise<VideoDetails[]> {
         
         if (fs.existsSync(COOKIES_PATH)) {
             args.push('--cookies', COOKIES_PATH);
-            args.push('--extractor-args', 'youtube:js_runtime=bun');
+            args.push('--extractor-args', `youtube:js_runtime=${BUN_PATH}`);
         } else {
-            args.push('--extractor-args', 'youtube:player_client=android_music;js_runtime=bun');
+            args.push('--extractor-args', `youtube:player_client=android_music;js_runtime=${BUN_PATH}`);
         }
         
         args.push(`ytsearch1:${query}`);
