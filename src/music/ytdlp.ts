@@ -1,6 +1,10 @@
 import { spawn } from 'child_process';
 import { Readable } from 'stream';
 import { StreamType } from '@discordjs/voice';
+import path from 'path';
+
+const YTDLP_PATH = path.resolve(process.cwd(), 'yt-dlp');
+
 
 export interface VideoDetails {
     title: string;
@@ -10,11 +14,16 @@ export interface VideoDetails {
 
 export async function getVideoInfo(url: string): Promise<VideoDetails> {
     return new Promise((resolve, reject) => {
-        const process = spawn('./yt-dlp', ['--dump-json', url]);
+        const process = spawn(YTDLP_PATH, ['--dump-json', url]);
         let data = '';
         let errorData = '';
 
+        process.on('error', (err) => {
+            reject(new Error(`Failed to spawn yt-dlp at ${YTDLP_PATH}: ${err.message}`));
+        });
+
         process.stdout.on('data', (chunk) => {
+
             data += chunk;
         });
 
@@ -47,7 +56,7 @@ export function createStream(url: string): { stream: Readable; type: StreamType 
     // -q: quiet (no progress bar)
     // --no-warnings: suppress warnings
     // --buffer-size 16K: minimize buffer in yt-dlp to stream faster
-    const process = spawn('./yt-dlp', [
+    const process = spawn(YTDLP_PATH, [
         '-f', 'bestaudio',
         '-q', '--no-warnings',
         '--buffer-size', '16K',
@@ -57,7 +66,12 @@ export function createStream(url: string): { stream: Readable; type: StreamType 
         stdio: ['ignore', 'pipe', 'ignore']
     });
     
+    process.on('error', (err) => {
+        console.error(`[yt-dlp] Failed to spawn process for stream: ${err.message}`);
+    });
+
     if (!process.stdout) {
+
         throw new Error('Failed to create stdout stream');
     }
 
@@ -80,11 +94,17 @@ export async function search(query: string): Promise<VideoDetails[]> {
     }
 
     return new Promise((resolve, reject) => {
-        const process = spawn('./yt-dlp', ['--dump-json', `ytsearch1:${query}`]);
+        const process = spawn(YTDLP_PATH, ['--dump-json', `ytsearch1:${query}`]);
         let data = '';
         let errorData = '';
         
+        process.on('error', (err) => {
+            console.error(`[yt-dlp] Failed to spawn at ${YTDLP_PATH}:`, err);
+            resolve([]);
+        });
+
         process.stdout.on('data', (chunk) => {
+
             data += chunk;
         });
 
