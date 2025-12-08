@@ -2,8 +2,11 @@ import { spawn } from 'child_process';
 import { Readable } from 'stream';
 import { StreamType } from '@discordjs/voice';
 import path from 'path';
+import fs from 'fs';
 
 const YTDLP_PATH = path.resolve(process.cwd(), 'yt-dlp');
+const COOKIES_PATH = path.resolve(process.cwd(), 'cookies.txt');
+
 
 
 export interface VideoDetails {
@@ -14,9 +17,15 @@ export interface VideoDetails {
 
 export async function getVideoInfo(url: string): Promise<VideoDetails> {
     return new Promise((resolve, reject) => {
-        const process = spawn(YTDLP_PATH, ['--dump-json', url]);
+        const args = ['--dump-json', url];
+        if (fs.existsSync(COOKIES_PATH)) {
+            args.push('--cookies', COOKIES_PATH);
+        }
+        
+        const process = spawn(YTDLP_PATH, args);
         let data = '';
         let errorData = '';
+
 
         process.on('error', (err) => {
             reject(new Error(`Failed to spawn yt-dlp at ${YTDLP_PATH}: ${err.message}`));
@@ -56,15 +65,22 @@ export function createStream(url: string): { stream: Readable; type: StreamType 
     // -q: quiet (no progress bar)
     // --no-warnings: suppress warnings
     // --buffer-size 16K: minimize buffer in yt-dlp to stream faster
-    const process = spawn(YTDLP_PATH, [
+    const args = [
         '-f', 'bestaudio',
         '-q', '--no-warnings',
         '--buffer-size', '16K',
         '-o', '-',
         url
-    ], {
+    ];
+
+    if (fs.existsSync(COOKIES_PATH)) {
+        args.push('--cookies', COOKIES_PATH);
+    }
+
+    const process = spawn(YTDLP_PATH, args, {
         stdio: ['ignore', 'pipe', 'ignore']
     });
+
     
     process.on('error', (err) => {
         console.error(`[yt-dlp] Failed to spawn process for stream: ${err.message}`);
@@ -94,9 +110,15 @@ export async function search(query: string): Promise<VideoDetails[]> {
     }
 
     return new Promise((resolve, reject) => {
-        const process = spawn(YTDLP_PATH, ['--dump-json', `ytsearch1:${query}`]);
+        const args = ['--dump-json', `ytsearch1:${query}`];
+        if (fs.existsSync(COOKIES_PATH)) {
+            args.push('--cookies', COOKIES_PATH);
+        }
+
+        const process = spawn(YTDLP_PATH, args);
         let data = '';
         let errorData = '';
+
         
         process.on('error', (err) => {
             console.error(`[yt-dlp] Failed to spawn at ${YTDLP_PATH}:`, err);
