@@ -164,7 +164,7 @@ Now playing: **Daft Punk - One More Time** (5:20) • requested by @User
 - Try using a direct YouTube URL instead
 
 **Commands not showing up:**
-- Make sure slash commands have been deployed with `bun run deploy`
+- Make sure slash commands have been deployed with `npm run deploy`
 - Try restarting Discord or re-inviting the bot
 
 ---

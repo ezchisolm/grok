@@ -139,7 +139,7 @@ export class GuildMusicPlayer {
     try {
       const stream = await this.createStream(next.url);
       const resource = createAudioResource(stream.stream, {
-        inputType: stream.type ?? StreamType.Arbitrary,
+        inputType: stream.type,
       });
 
       this.player.play(resource);
@@ -176,15 +176,39 @@ export class GuildMusicPlayer {
 
   private async createStream(url: string) {
     try {
-      return await playdl.stream(url, { quality: 2 });
-    } catch (primaryError) {
-      this.logger.warn(
-        `Primary stream fetch failed for url ${url} in guild ${this.guildId}: ${(primaryError as Error).message}`,
-      );
-
+      // Get video info first, then create stream from info
+      // This is more reliable than direct streaming
       const info = await playdl.video_info(url);
-      return await playdl.stream_from_info(info, { quality: 2 });
+      const stream = await playdl.stream_from_info(info, {
+        quality: 1,
+      });
+      
+      this.logger.info(`Successfully created stream for "${info.video_details.title}" in guild ${this.guildId}`);
+      return stream;
+    } catch (error) {
+      this.logger.error(
+        `Failed to create stream for url ${url} in guild ${this.guildId}: ${(error as Error).message}`,
+      );
+      throw error;
     }
+  }
+
+  private extractVideoId(url: string): string | null {
+    // Extract video ID from various YouTube URL formats
+    const patterns = [
+      /(?:youtube\.com\/watch\?v=|youtu\.be\/)([^&\n?#]+)/,
+      /youtube\.com\/embed\/([^&\n?#]+)/,
+      /youtube\.com\/v\/([^&\n?#]+)/,
+    ];
+
+    for (const pattern of patterns) {
+      const match = url.match(pattern);
+      if (match && match[1]) {
+        return match[1];
+      }
+    }
+
+    return null;
   }
 }
 

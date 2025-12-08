@@ -12,7 +12,7 @@ A private Discord music bot that can search for songs on YouTube and play them i
 
 ## Prerequisites
 
-- [Bun](https://bun.sh) v1.3.2 or later (recommended) or Node.js v18+
+Node.js v18+ and npm (recommended)
 - A Discord bot token from the [Discord Developer Portal](https://discord.com/developers/applications)
 - FFmpeg (automatically included via `ffmpeg-static` dependency)
 
@@ -26,9 +26,7 @@ A private Discord music bot that can search for songs on YouTube and play them i
 
 2. **Install dependencies**
    ```bash
-   bun install
-   # or with npm:
-   # npm install
+   npm install
    ```
 
 3. **Configure environment variables**
@@ -52,23 +50,17 @@ A private Discord music bot that can search for songs on YouTube and play them i
 
 4. **Build the bot**
    ```bash
-   bun run build
-   # or with npm:
-   # npm run build
+   npm run build
    ```
 
 5. **Deploy slash commands**
    ```bash
-   bun run deploy
-   # or with npm:
-   # npm run deploy
+   npm run deploy
    ```
 
 6. **Start the bot**
    ```bash
-   bun run dev
-   # or with npm:
-   # npm run dev
+   npm run dev
    ```
 
 ## Commands
@@ -95,21 +87,17 @@ The bot uses Discord slash commands:
 
 Run in development mode with hot reload:
 ```bash
-bun run dev
+npm run dev
 ```
 
 Run tests:
 ```bash
-bun test
-# or with npm:
-# npm test
+npm test
 ```
 
 Build TypeScript:
 ```bash
-bun run build
-# or with npm:
-# npm run build
+npm run build
 ```
 
 ## Project Structure
@@ -141,4 +129,4 @@ Private use only.
 
 ---
 
-This project was created using `bun init` in bun v1.3.2. [Bun](https://bun.com) is a fast all-in-one JavaScript runtime.
+This project was originally created using `bun init` in bun v1.3.2 but has been converted to use Node.js and npm.

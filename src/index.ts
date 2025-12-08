@@ -1,4 +1,5 @@
 import { Client, Events, GatewayIntentBits } from "discord.js";
+import playdl from "play-dl";
 import { commandMap } from "./commands/index";
 import { loadEnv } from "./utils/env";
 import { logger } from "./utils/logger";
@@ -10,6 +11,17 @@ const client = new Client({
 });
 
 const musicManager = new MusicManager(logger);
+
+// Initialize play-dl for YouTube support
+(async () => {
+  try {
+    // Refresh YouTube tokens to avoid rate limiting
+    await playdl.refreshToken();
+    logger.info("play-dl YouTube tokens refreshed successfully");
+  } catch (error) {
+    logger.warn(`play-dl token refresh warning (this is usually fine): ${(error as Error).message}`);
+  }
+})();
 
 process.on("unhandledRejection", (reason) => {
   logger.error(`Unhandled rejection: ${String(reason)}`);
