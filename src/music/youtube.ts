@@ -1,34 +1,16 @@
-import playdl from "play-dl";
+import * as ytdlp from "./ytdlp";
 import type { Track } from "./queue";
 
 export async function resolveTrack(query: string, requestedBy: string): Promise<Track> {
-  const validation = playdl.yt_validate(query);
-
-  if (validation === "video") {
-    const info = await playdl.video_info(query);
-    const details = info.video_details;
-
-    return {
-      title: details.title ?? "Unknown title",
-      url: details.url,
-      requestedBy,
-      duration: details.durationInSec,
-    };
-  }
-
-  const results = await playdl.search(query, {
-    source: { youtube: "video" },
-    limit: 1,
-  });
-
+  const results = await ytdlp.search(query);
   const first = results[0];
 
-  if (!first || !first.url) {
+  if (!first) {
     throw new Error("No results found for your query.");
   }
 
   return {
-    title: first.title ?? first.url,
+    title: first.title ?? "Unknown title",
     url: first.url,
     requestedBy,
     duration: first.durationInSec,

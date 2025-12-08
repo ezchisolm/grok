@@ -1,4 +1,4 @@
-import playdl from "play-dl";
+import * as ytdlp from "./ytdlp";
 import type { DiscordGatewayAdapterCreator } from "@discordjs/voice";
 import {
   AudioPlayer,
@@ -176,14 +176,10 @@ export class GuildMusicPlayer {
 
   private async createStream(url: string) {
     try {
-      // Get video info first, then create stream from info
-      // This is more reliable than direct streaming
-      const info = await playdl.video_info(url);
-      const stream = await playdl.stream_from_info(info, {
-        quality: 1,
-      });
+      const info = await ytdlp.getVideoInfo(url);
+      const stream = ytdlp.createStream(url);
       
-      this.logger.info(`Successfully created stream for "${info.video_details.title}" in guild ${this.guildId}`);
+      this.logger.info(`Successfully created stream for "${info.title}" in guild ${this.guildId}`);
       return stream;
     } catch (error) {
       this.logger.error(
