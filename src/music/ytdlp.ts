@@ -86,12 +86,10 @@ export function createStream(url: string): { stream: Readable; type: StreamType 
     // -q: quiet (no progress bar)
     // --no-warnings: suppress warnings
     // --buffer-size 16K: minimize buffer in yt-dlp to stream faster
-    // --no-part: don't use .part files (faster for streaming)
     const args = [
-        '-f', 'bestaudio/best',
+        '-f', 'bestaudio',
         '-q', '--no-warnings',
         '--buffer-size', '16K',
-        '--no-part',
         '--js-runtimes', `bun:${BUN_PATH}`
     ];
 

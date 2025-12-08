@@ -140,8 +140,6 @@ export class GuildMusicPlayer {
       const stream = await this.createStream(next.url);
       const resource = createAudioResource(stream.stream, {
         inputType: stream.type,
-        inlineVolume: true,
-        metadata: next,
       });
 
       this.player.play(resource);
