@@ -1,4 +1,4 @@
-import { SlashCommandBuilder } from "discord.js";
+import { SlashCommandBuilder, MessageFlags } from "discord.js";
 import type { BotCommand } from "./types";
 import { formatDuration } from "../music/youtube";
 
@@ -7,7 +7,7 @@ const queue: BotCommand = {
 
   async execute(interaction, { music }) {
     if (!interaction.guild) {
-      await interaction.reply({ content: "This command only works inside a server.", ephemeral: true });
+      await interaction.reply({ content: "This command only works inside a server.", flags: MessageFlags.Ephemeral });
       return;
     }
 
@@ -16,7 +16,7 @@ const queue: BotCommand = {
     const items = controller.queueItems;
 
     if (!nowPlaying && items.length === 0) {
-      await interaction.reply({ content: "The queue is empty.", ephemeral: true });
+      await interaction.reply({ content: "The queue is empty.", flags: MessageFlags.Ephemeral });
       return;
     }
 

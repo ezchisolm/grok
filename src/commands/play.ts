@@ -1,4 +1,4 @@
-import { SlashCommandBuilder, ChannelType, GuildMember } from "discord.js";
+import { SlashCommandBuilder, ChannelType, GuildMember, MessageFlags } from "discord.js";
 import type { BotCommand } from "./types";
 import { formatDuration, resolveTrack } from "../music/youtube";
 
@@ -12,7 +12,7 @@ const play: BotCommand = {
 
   async execute(interaction, { music, logger }) {
     if (!interaction.guild) {
-      await interaction.reply({ content: "This command only works inside a server.", ephemeral: true });
+      await interaction.reply({ content: "This command only works inside a server.", flags: MessageFlags.Ephemeral });
       return;
     }
 
@@ -29,7 +29,7 @@ const play: BotCommand = {
     ) {
       await interaction.reply({
         content: "You need to be in a voice channel to use /play.",
-        ephemeral: true,
+        flags: MessageFlags.Ephemeral,
       });
       return;
     }
@@ -54,7 +54,7 @@ const play: BotCommand = {
       if (interaction.deferred || interaction.replied) {
         await interaction.editReply({ content: `Sorry, I couldn't play that: ${message}` });
       } else {
-        await interaction.reply({ content: `Sorry, I couldn't play that: ${message}`, ephemeral: true });
+        await interaction.reply({ content: `Sorry, I couldn't play that: ${message}`, flags: MessageFlags.Ephemeral });
       }
     }
   },

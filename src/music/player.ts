@@ -169,7 +169,12 @@ export class GuildMusicPlayer {
   private destroyConnection() {
     this.clearIdleTimer();
     this.currentTrack = undefined;
-    this.connection?.destroy();
+    
+    // Only destroy if connection exists and isn't already destroyed
+    if (this.connection && this.connection.state.status !== VoiceConnectionStatus.Destroyed) {
+      this.connection.destroy();
+    }
+    
     this.connection = undefined;
     this.player.stop(true);
   }

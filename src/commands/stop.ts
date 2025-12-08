@@ -1,4 +1,4 @@
-import { SlashCommandBuilder } from "discord.js";
+import { SlashCommandBuilder, MessageFlags } from "discord.js";
 import type { BotCommand } from "./types";
 
 const stop: BotCommand = {
@@ -6,7 +6,7 @@ const stop: BotCommand = {
 
   async execute(interaction, { music, logger }) {
     if (!interaction.guild) {
-      await interaction.reply({ content: "This command only works inside a server.", ephemeral: true });
+      await interaction.reply({ content: "This command only works inside a server.", flags: MessageFlags.Ephemeral });
       return;
     }
 
@@ -16,7 +16,7 @@ const stop: BotCommand = {
       await interaction.reply("Stopped playback and cleared the queue.");
     } catch (error) {
       logger.error(`Failed to stop playback: ${(error as Error).message}`);
-      await interaction.reply({ content: "Sorry, I couldn't stop playback.", ephemeral: true });
+      await interaction.reply({ content: "Sorry, I couldn't stop playback.", flags: MessageFlags.Ephemeral });
     }
   },
 };
