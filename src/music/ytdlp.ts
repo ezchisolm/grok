@@ -17,14 +17,18 @@ export interface VideoDetails {
 
 export async function getVideoInfo(url: string): Promise<VideoDetails> {
     return new Promise((resolve, reject) => {
-        const args = ['--dump-json', url];
+        const args = [
+            '--dump-json',
+            '--extractor-args', 'youtube:js_runtime=bun',
+            url
+        ];
         
         // Add cookies if available (use web client for better compatibility)
         if (fs.existsSync(COOKIES_PATH)) {
             args.push('--cookies', COOKIES_PATH);
         } else {
             // Without cookies, use android_music client to avoid bot detection
-            args.push('--extractor-args', 'youtube:player_client=android_music');
+            args.push('--extractor-args', 'youtube:player_client=android_music;js_runtime=bun');
         }
         
         const process = spawn(YTDLP_PATH, args);
@@ -74,6 +78,7 @@ export function createStream(url: string): { stream: Readable; type: StreamType 
         '-f', 'bestaudio',
         '-q', '--no-warnings',
         '--buffer-size', '16K',
+        '--extractor-args', 'youtube:js_runtime=bun',
         '-o', '-',
         url
     ];
@@ -81,7 +86,7 @@ export function createStream(url: string): { stream: Readable; type: StreamType 
     if (fs.existsSync(COOKIES_PATH)) {
         args.push('--cookies', COOKIES_PATH);
     } else {
-        args.push('--extractor-args', 'youtube:player_client=android_music');
+        args.push('--extractor-args', 'youtube:player_client=android_music;js_runtime=bun');
     }
 
     const process = spawn(YTDLP_PATH, args, {
@@ -117,12 +122,16 @@ export async function search(query: string): Promise<VideoDetails[]> {
     }
 
     return new Promise((resolve, reject) => {
-        const args = ['--dump-json', `ytsearch1:${query}`];
+        const args = [
+            '--dump-json',
+            '--extractor-args', 'youtube:js_runtime=bun',
+            `ytsearch1:${query}`
+        ];
         
         if (fs.existsSync(COOKIES_PATH)) {
             args.push('--cookies', COOKIES_PATH);
         } else {
-            args.push('--extractor-args', 'youtube:player_client=android_music');
+            args.push('--extractor-args', 'youtube:player_client=android_music;js_runtime=bun');
         }
 
         const process = spawn(YTDLP_PATH, args);
