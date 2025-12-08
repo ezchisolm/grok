@@ -17,7 +17,13 @@ export interface VideoDetails {
 
 export async function getVideoInfo(url: string): Promise<VideoDetails> {
     return new Promise((resolve, reject) => {
-        const args = ['--dump-json', url];
+        const args = [
+            '--dump-json',
+            '--extractor-args', 'youtube:player_client=android',
+            url
+        ];
+        
+        // Add cookies if available
         if (fs.existsSync(COOKIES_PATH)) {
             args.push('--cookies', COOKIES_PATH);
         }
@@ -69,6 +75,7 @@ export function createStream(url: string): { stream: Readable; type: StreamType 
         '-f', 'bestaudio',
         '-q', '--no-warnings',
         '--buffer-size', '16K',
+        '--extractor-args', 'youtube:player_client=android',
         '-o', '-',
         url
     ];
@@ -110,7 +117,12 @@ export async function search(query: string): Promise<VideoDetails[]> {
     }
 
     return new Promise((resolve, reject) => {
-        const args = ['--dump-json', `ytsearch1:${query}`];
+        const args = [
+            '--dump-json',
+            '--extractor-args', 'youtube:player_client=android',
+            `ytsearch1:${query}`
+        ];
+        
         if (fs.existsSync(COOKIES_PATH)) {
             args.push('--cookies', COOKIES_PATH);
         }
