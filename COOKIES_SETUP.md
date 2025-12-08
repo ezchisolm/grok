@@ -1,8 +1,23 @@
 # YouTube Cookies Setup Guide
 
-YouTube may block bot requests from your server. To fix this, you need to export cookies from your browser where you're logged into YouTube.
+**IMPORTANT**: Your bot needs YouTube cookies to work. YouTube is blocking requests from servers without authentication.
 
-## Option 1: Using Browser Extension (Recommended)
+## Quick Start (Recommended)
+
+The easiest way is to use yt-dlp locally to extract cookies from your browser:
+
+```bash
+# On your LOCAL machine (not the server), run:
+yt-dlp --cookies-from-browser chrome --cookies cookies.txt --skip-download "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
+```
+
+Replace `chrome` with your browser: `firefox`, `edge`, `brave`, `safari`, `chromium`, etc.
+
+This creates a `cookies.txt` file that you can upload to your server.
+
+## Alternative: Browser Extension
+
+If you don't have yt-dlp installed locally, use a browser extension:
 
 ### For Chrome/Edge:
 1. Install the extension: [Get cookies.txt LOCALLY](https://chrome.google.com/webstore/detail/get-cookiestxt-locally/cclelndahbckbenkjhflpdbgdldlbecc)
@@ -16,13 +31,7 @@ YouTube may block bot requests from your server. To fix this, you need to export
 3. Click the extension icon
 4. Save the `cookies.txt` file
 
-## Option 2: Using yt-dlp directly (if you have it locally)
-
-```bash
-yt-dlp --cookies-from-browser chrome --cookies cookies.txt "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
-```
-
-Replace `chrome` with your browser: `firefox`, `edge`, `brave`, `safari`, etc.
+**Important**: Make sure you're logged into YouTube before exporting cookies!
 
 ## Uploading Cookies to Your Server
 

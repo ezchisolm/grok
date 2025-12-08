@@ -26,15 +26,17 @@ export interface VideoDetails {
 
 export async function getVideoInfo(url: string): Promise<VideoDetails> {
     return new Promise((resolve, reject) => {
-        const args = ['--dump-json'];
+        const args = [
+            '--dump-json',
+            '--js-runtimes', `bun:${BUN_PATH}`
+        ];
         
-        // Add cookies if available (use web client for better compatibility)
+        // Add cookies if available
         if (fs.existsSync(COOKIES_PATH)) {
             args.push('--cookies', COOKIES_PATH);
-            args.push('--extractor-args', `youtube:js_runtime=${BUN_PATH}`);
         } else {
-            // Without cookies, use android_music client to avoid bot detection
-            args.push('--extractor-args', `youtube:player_client=android_music;js_runtime=${BUN_PATH}`);
+            // Without cookies, use android_music client to avoid some bot detection
+            args.push('--extractor-args', 'youtube:player_client=android_music');
         }
         
         args.push(url);
@@ -87,14 +89,14 @@ export function createStream(url: string): { stream: Readable; type: StreamType 
     const args = [
         '-f', 'bestaudio',
         '-q', '--no-warnings',
-        '--buffer-size', '16K'
+        '--buffer-size', '16K',
+        '--js-runtimes', `bun:${BUN_PATH}`
     ];
 
     if (fs.existsSync(COOKIES_PATH)) {
         args.push('--cookies', COOKIES_PATH);
-        args.push('--extractor-args', `youtube:js_runtime=${BUN_PATH}`);
     } else {
-        args.push('--extractor-args', `youtube:player_client=android_music;js_runtime=${BUN_PATH}`);
+        args.push('--extractor-args', 'youtube:player_client=android_music');
     }
     
     args.push('-o', '-', url);
@@ -132,13 +134,15 @@ export async function search(query: string): Promise<VideoDetails[]> {
     }
 
     return new Promise((resolve, reject) => {
-        const args = ['--dump-json'];
+        const args = [
+            '--dump-json',
+            '--js-runtimes', `bun:${BUN_PATH}`
+        ];
         
         if (fs.existsSync(COOKIES_PATH)) {
             args.push('--cookies', COOKIES_PATH);
-            args.push('--extractor-args', `youtube:js_runtime=${BUN_PATH}`);
         } else {
-            args.push('--extractor-args', `youtube:player_client=android_music;js_runtime=${BUN_PATH}`);
+            args.push('--extractor-args', 'youtube:player_client=android_music');
         }
         
         args.push(`ytsearch1:${query}`);
