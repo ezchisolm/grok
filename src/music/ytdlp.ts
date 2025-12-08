@@ -74,6 +74,7 @@ export async function search(query: string): Promise<VideoDetails[]> {
             const info = await getVideoInfo(query);
             return [info];
         } catch (e) {
+            console.error(`[yt-dlp] getVideoInfo failed for URL "${query}":`, e);
             return [];
         }
     }
@@ -81,9 +82,14 @@ export async function search(query: string): Promise<VideoDetails[]> {
     return new Promise((resolve, reject) => {
         const process = spawn('./yt-dlp', ['--dump-json', `ytsearch1:${query}`]);
         let data = '';
+        let errorData = '';
         
         process.stdout.on('data', (chunk) => {
             data += chunk;
+        });
+
+        process.stderr.on('data', (chunk) => {
+            errorData += chunk;
         });
 
         process.on('close', (code) => {
@@ -96,9 +102,11 @@ export async function search(query: string): Promise<VideoDetails[]> {
                         durationInSec: info.duration
                     }]);
                 } catch (e) {
+                    console.error(`[yt-dlp] JSON parse error for "${query}":`, e);
                     resolve([]);
                 }
             } else {
+                console.error(`[yt-dlp] Search failed for "${query}". Exit code: ${code}. Error: ${errorData}`);
                 resolve([]);
             }
         });

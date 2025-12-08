@@ -99,3 +99,48 @@ We use PM2 to keep the bot running in the background and restart it if it crashe
     bun install
     pm2 restart grok-music
     ```
+
+## Troubleshooting
+
+### "Killed" or "SIGKILL" during build
+If you see `error: script "build" was terminated by signal SIGKILL`, your server ran out of RAM. This is common on 512MB Droplets.
+
+**Fix: Create a Swap File**
+Run these commands to add 1GB of virtual RAM:
+```bash
+sudo fallocate -l 1G /swapfile
+sudo chmod 600 /swapfile
+sudo mkswap /swapfile
+sudo swapon /swapfile
+echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab
+```
+Then try `bun run deploy` again.
+
+### "node: No such file or directory" when running PM2
+If you see `/usr/bin/env: ‘node’: No such file or directory`, it means PM2 (which is a Node.js app) can't find the Node.js runtime, even though you installed Bun.
+
+**Fix: Install Node.js**
+PM2 requires Node.js to run itself, even if it's managing a Bun application.
+```bash
+sudo apt install -y nodejs npm
+```
+Then try `pm2 start ecosystem.config.cjs` again.
+
+### "No results found" or Music not playing
+If the bot joins but doesn't play, or says "No results found", YouTube might be blocking the server's IP.
+
+**Check logs:**
+```bash
+pm2 logs grok-music
+```
+
+**Test yt-dlp manually:**
+Run this inside your `grok` folder on the server:
+```bash
+./yt-dlp --dump-json "ytsearch1:never gonna give you up"
+```
+If it says "Sign in to confirm you’re not a bot", you need to use cookies.
+1. Export cookies from your browser (use "Get cookies.txt LOCALLY" extension).
+2. Save as `cookies.txt` in the `grok` folder.
+3. Update `src/music/ytdlp.ts` to use `--cookies cookies.txt`.
+
