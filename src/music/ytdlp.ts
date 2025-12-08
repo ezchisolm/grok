@@ -30,6 +30,8 @@ export async function getVideoInfo(url: string): Promise<VideoDetails> {
         
         args.push(url);
         
+        console.log(`[yt-dlp] Running: ${YTDLP_PATH} ${args.join(' ')}`);
+        
         const process = spawn(YTDLP_PATH, args);
         let data = '';
         let errorData = '';
@@ -131,6 +133,8 @@ export async function search(query: string): Promise<VideoDetails[]> {
         }
         
         args.push(`ytsearch1:${query}`);
+
+        console.log(`[yt-dlp] Running: ${YTDLP_PATH} ${args.join(' ')}`);
 
         const process = spawn(YTDLP_PATH, args);
         let data = '';
