@@ -89,6 +89,10 @@ export class GuildMusicPlayer {
     return this.player.unpause();
   }
 
+  async prepare(channel: VoiceBasedChannel): Promise<void> {
+    await this.ensureConnection(channel);
+  }
+
   private async ensureConnection(channel: VoiceBasedChannel): Promise<VoiceConnection> {
     if (
       this.connection &&
@@ -137,7 +141,7 @@ export class GuildMusicPlayer {
     }
 
     try {
-      const stream = await this.createStream(next.url);
+      const stream = await this.createStream(next);
       const resource = createAudioResource(stream.stream, {
         inputType: stream.type,
       });
@@ -179,16 +183,14 @@ export class GuildMusicPlayer {
     this.player.stop(true);
   }
 
-  private async createStream(url: string) {
+  private async createStream(track: Track) {
     try {
-      const info = await ytdlp.getVideoInfo(url);
-      const stream = ytdlp.createStream(url);
-      
-      this.logger.info(`Successfully created stream for "${info.title}" in guild ${this.guildId}`);
+      const stream = ytdlp.createStream(track.url);
+      this.logger.info(`Starting stream for "${track.title}" in guild ${this.guildId}`);
       return stream;
     } catch (error) {
       this.logger.error(
-        `Failed to create stream for url ${url} in guild ${this.guildId}: ${(error as Error).message}`,
+        `Failed to create stream for "${track.title}" in guild ${this.guildId}: ${(error as Error).message}`,
       );
       throw error;
     }

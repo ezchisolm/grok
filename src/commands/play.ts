@@ -39,8 +39,8 @@ const play: BotCommand = {
 
     try {
       const requestedBy = `<@${interaction.user.id}>`;
-      const track = await resolveTrack(query, requestedBy);
       const controller = music.get(interaction.guild.id);
+      const [track] = await Promise.all([resolveTrack(query, requestedBy), controller.prepare(voiceChannel)]);
       const position = await controller.enqueue(track, voiceChannel);
 
       const description = `**${track.title}** (${formatDuration(track.duration)}) • requested by ${requestedBy}`;
