@@ -1,5 +1,4 @@
 import { Innertube } from "youtubei.js";
-import CompactVideo from "youtubei.js/dist/src/parser/classes/CompactVideo.js";
 import { StreamType } from "@discordjs/voice";
 import type { Track } from "./queue";
 import { getCookieHeader } from "../utils/cookies";
@@ -35,18 +34,26 @@ export async function resolveTrack(query: string, requestedBy: string): Promise<
   }
 
   const results = await client.search(query, { type: "video" });
-  const first = results.results.firstOfType(CompactVideo);
+  const first = results.results.find((item) => {
+    const type = (item as unknown as { type?: string; constructor?: { type?: string } }).type;
+    const ctorType = (item as unknown as { constructor?: { type?: string } }).constructor?.type;
+    return type === "CompactVideo" || ctorType === "CompactVideo" || Boolean((item as { id?: string }).id);
+  });
 
-  if (!first) {
+  if (!first || !(first as { id?: string }).id) {
     throw new Error("No results found for your query.");
   }
 
+  const id = (first as { id?: string }).id!;
+  const title = (first as { title?: { toString(): string } }).title?.toString() ?? "Unknown title";
+  const seconds = (first as { duration?: { seconds?: number } }).duration?.seconds;
+
   return {
-    title: first.title.toString(),
-    url: `https://www.youtube.com/watch?v=${first.id}`,
+    title,
+    url: `https://www.youtube.com/watch?v=${id}`,
     requestedBy,
-    duration: first.duration?.seconds,
-    ...(await getStreamingInfo(client, first.id)),
+    duration: seconds,
+    ...(await getStreamingInfo(client, id)),
   };
 }
 
