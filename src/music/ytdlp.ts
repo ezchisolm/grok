@@ -1,190 +1,80 @@
-import { spawn, execSync } from 'child_process';
-import { Readable } from 'stream';
-import { StreamType } from '@discordjs/voice';
-import path from 'path';
-import fs from 'fs';
+import { spawn, execSync } from "child_process";
+import { Readable } from "stream";
+import { StreamType } from "@discordjs/voice";
+import path from "path";
+import fs from "fs";
+import ytdl from "@distube/ytdl-core";
+import { getCookieHeader } from "../utils/cookies";
 
-const YTDLP_PATH = path.resolve(process.cwd(), 'yt-dlp');
-const COOKIES_PATH = path.resolve(process.cwd(), 'cookies.txt');
+const YTDLP_PATH = path.resolve(process.cwd(), "yt-dlp");
+const COOKIES_PATH = path.resolve(process.cwd(), "cookies.txt");
 
-// Get the full path to Bun
-let BUN_PATH = 'bun';
+// Get the full path to Bun (used only for yt-dlp fallback)
+let BUN_PATH = "bun";
 try {
-    BUN_PATH = execSync('which bun', { encoding: 'utf-8' }).trim();
-    console.log(`[yt-dlp] Found Bun at: ${BUN_PATH}`);
+  BUN_PATH = execSync("which bun", { encoding: "utf-8" }).trim();
+  console.log(`[yt-dlp] Found Bun at: ${BUN_PATH}`);
 } catch (e) {
-    console.warn('[yt-dlp] Could not find Bun path, using "bun" and hoping it\'s in PATH');
+  console.warn('[yt-dlp] Could not find Bun path, using "bun" and hoping it\'s in PATH');
 }
 
+const USER_AGENT =
+  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/118.0.5993.70 Safari/537.36";
 
-
-export interface VideoDetails {
-    title: string;
-    url: string;
-    durationInSec: number;
-}
-
-export async function getVideoInfo(url: string): Promise<VideoDetails> {
-    return new Promise((resolve, reject) => {
-        const args = [
-            '--dump-json',
-            '--js-runtimes', `bun:${BUN_PATH}`
-        ];
-        
-        // Add cookies if available
-        if (fs.existsSync(COOKIES_PATH)) {
-            args.push('--cookies', COOKIES_PATH);
-        } else {
-            // Without cookies, use android_music client to avoid some bot detection
-            args.push('--extractor-args', 'youtube:player_client=android_music');
-        }
-        
-        args.push(url);
-        
-        console.log(`[yt-dlp] Running: ${YTDLP_PATH} ${args.join(' ')}`);
-        
-        const process = spawn(YTDLP_PATH, args);
-        let data = '';
-        let errorData = '';
-
-
-        process.on('error', (err) => {
-            reject(new Error(`Failed to spawn yt-dlp at ${YTDLP_PATH}: ${err.message}`));
-        });
-
-        process.stdout.on('data', (chunk) => {
-
-            data += chunk;
-        });
-
-        process.stderr.on('data', (chunk) => {
-            errorData += chunk;
-        });
-
-        process.on('close', (code) => {
-            if (code === 0) {
-                try {
-                    const info = JSON.parse(data);
-                    resolve({
-                        title: info.title,
-                        url: info.webpage_url,
-                        durationInSec: info.duration
-                    });
-                } catch (e) {
-                    reject(new Error(`Failed to parse yt-dlp output: ${e}`));
-                }
-            } else {
-                reject(new Error(`yt-dlp exited with code ${code}: ${errorData}`));
-            }
-        });
-    });
-}
+const baseHeaders = {
+  "User-Agent": USER_AGENT,
+  "Accept-Language": "en-US,en;q=0.9",
+};
 
 export function createStream(url: string): { stream: Readable; type: StreamType } {
-    // -f bestaudio: download best audio quality
-    // -o -: output to stdout
-    // -q: quiet (no progress bar)
-    // --no-warnings: suppress warnings
-    // --buffer-size 16K: minimize buffer in yt-dlp to stream faster
-    const args = [
-        '-f', 'bestaudio',
-        '-q', '--no-warnings',
-        '--buffer-size', '16K',
-        '--js-runtimes', `bun:${BUN_PATH}`
-    ];
+  const cookieHeader = getCookieHeader();
+  const headers = {
+    ...baseHeaders,
+    ...(cookieHeader ? { cookie: cookieHeader } : {}),
+  };
 
-    if (fs.existsSync(COOKIES_PATH)) {
-        args.push('--cookies', COOKIES_PATH);
-    } else {
-        args.push('--extractor-args', 'youtube:player_client=android_music');
-    }
-    
-    args.push('-o', '-', url);
-
-    const process = spawn(YTDLP_PATH, args, {
-        stdio: ['ignore', 'pipe', 'ignore']
+  try {
+    const stream = ytdl(url, {
+      quality: "highestaudio",
+      filter: "audioonly",
+      highWaterMark: 1 << 25,
+      requestOptions: {
+        headers,
+      },
     });
 
-    
-    process.on('error', (err) => {
-        console.error(`[yt-dlp] Failed to spawn process for stream: ${err.message}`);
-    });
-
-    if (!process.stdout) {
-
-        throw new Error('Failed to create stdout stream');
-    }
-
-    return {
-        stream: process.stdout,
-        type: StreamType.Arbitrary
-    };
+    return { stream, type: StreamType.Arbitrary };
+  } catch (error) {
+    console.warn(`[ytdl-core] Failed to create stream, falling back to yt-dlp: ${(error as Error).message}`);
+    return spawnYtDlpStream(url, cookieHeader);
+  }
 }
 
-export async function search(query: string): Promise<VideoDetails[]> {
-    // Check if it's a URL
-    if (query.startsWith('http')) {
-        try {
-            const info = await getVideoInfo(query);
-            return [info];
-        } catch (e) {
-            console.error(`[yt-dlp] getVideoInfo failed for URL "${query}":`, e);
-            return [];
-        }
-    }
+function spawnYtDlpStream(url: string, cookieHeader?: string) {
+  const args = ["-f", "bestaudio", "-q", "--no-warnings", "--buffer-size", "16K", "--js-runtimes", `bun:${BUN_PATH}`];
 
-    return new Promise((resolve, reject) => {
-        const args = [
-            '--dump-json',
-            '--js-runtimes', `bun:${BUN_PATH}`
-        ];
-        
-        if (fs.existsSync(COOKIES_PATH)) {
-            args.push('--cookies', COOKIES_PATH);
-        } else {
-            args.push('--extractor-args', 'youtube:player_client=android_music');
-        }
-        
-        args.push(`ytsearch1:${query}`);
+  if (fs.existsSync(COOKIES_PATH) || cookieHeader) {
+    args.push("--cookies", COOKIES_PATH);
+  } else {
+    args.push("--extractor-args", "youtube:player_client=android_music");
+  }
 
-        console.log(`[yt-dlp] Running: ${YTDLP_PATH} ${args.join(' ')}`);
+  args.push("-o", "-", url);
 
-        const process = spawn(YTDLP_PATH, args);
-        let data = '';
-        let errorData = '';
+  const process = spawn(YTDLP_PATH, args, {
+    stdio: ["ignore", "pipe", "ignore"],
+  });
 
-        
-        process.on('error', (err) => {
-            console.error(`[yt-dlp] Failed to spawn at ${YTDLP_PATH}:`, err);
-            resolve([]);
-        });
+  process.on("error", (err) => {
+    console.error(`[yt-dlp] Failed to spawn process for stream: ${err.message}`);
+  });
 
-        process.stdout.on('data', (chunk) => {
+  if (!process.stdout) {
+    throw new Error("Failed to create stdout stream");
+  }
 
-            data += chunk;
-        });
-
-        process.stderr.on('data', (chunk) => {
-            errorData += chunk;
-        });
-
-        process.on('close', (code) => {
-            if (code === 0) {
-                try {
-                    const info = JSON.parse(data);
-                    resolve([{
-                        title: info.title,
-                        url: info.webpage_url,
-                        durationInSec: info.duration
-                    }]);
-                } catch (e) {
-                    console.error(`[yt-dlp] JSON parse error for "${query}":`, e);
-                    resolve([]);
-                }
-            } else {
-                console.error(`[yt-dlp] Search failed for "${query}". Exit code: ${code}. Error: ${errorData}`);
-                resolve([]);
-            }
-        });
-    });
+  return {
+    stream: process.stdout,
+    type: StreamType.Arbitrary,
+  };
 }

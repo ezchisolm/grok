@@ -1,19 +1,48 @@
-import * as ytdlp from "./ytdlp";
+import { Innertube } from "youtubei.js";
+import CompactVideo from "youtubei.js/dist/src/parser/classes/CompactVideo.js";
 import type { Track } from "./queue";
+import { getCookieHeader } from "../utils/cookies";
+
+let youtubeClient: Promise<Innertube> | undefined;
+
+async function getClient(): Promise<Innertube> {
+  if (!youtubeClient) {
+    youtubeClient = Innertube.create({
+      cookie: getCookieHeader(),
+    });
+  }
+
+  return youtubeClient;
+}
 
 export async function resolveTrack(query: string, requestedBy: string): Promise<Track> {
-  const results = await ytdlp.search(query);
-  const first = results[0];
+  const client = await getClient();
+
+  // Direct URLs can skip search
+  if (query.startsWith("http")) {
+    const info = await client.getBasicInfo(query);
+    const details = info.basic_info;
+
+    return {
+      title: details.title ?? "Unknown title",
+      url: `https://www.youtube.com/watch?v=${details.id}`,
+      requestedBy,
+      duration: details.duration ?? undefined,
+    };
+  }
+
+  const results = await client.search(query, { type: "video" });
+  const first = results.results.firstOfType(CompactVideo);
 
   if (!first) {
     throw new Error("No results found for your query.");
   }
 
   return {
-    title: first.title ?? "Unknown title",
-    url: first.url,
+    title: first.title.toString(),
+    url: `https://www.youtube.com/watch?v=${first.id}`,
     requestedBy,
-    duration: first.durationInSec,
+    duration: first.duration?.seconds,
   };
 }
 
