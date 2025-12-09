@@ -4,6 +4,9 @@ import { StreamType } from "@discordjs/voice";
 import path from "path";
 import fs from "fs";
 import ytdl from "@distube/ytdl-core";
+import https from "node:https";
+import { URL } from "node:url";
+import type { Track } from "./queue";
 import { getCookieHeader } from "../utils/cookies";
 
 const YTDLP_PATH = path.resolve(process.cwd(), "yt-dlp");
@@ -26,18 +29,28 @@ const baseHeaders = {
   "Accept-Language": "en-US,en;q=0.9",
 };
 
-export function createStream(url: string): { stream: Readable; type: StreamType } {
+export async function createStream(track: Track): Promise<{ stream: Readable; type: StreamType }> {
   const cookieHeader = getCookieHeader();
   const headers = {
     ...baseHeaders,
     ...(cookieHeader ? { cookie: cookieHeader } : {}),
   };
 
+  if (track.streamUrl) {
+    try {
+      const stream = await openHttpStream(track.streamUrl, headers);
+      return { stream, type: track.inputType ?? StreamType.Arbitrary };
+    } catch (error) {
+      console.warn(`[stream] Failed to use pre-fetched stream URL, falling back to ytdl: ${(error as Error).message}`);
+    }
+  }
+
   try {
-    const stream = ytdl(url, {
+    const stream = ytdl(track.url, {
       quality: "highestaudio",
       filter: "audioonly",
       highWaterMark: 1 << 25,
+      dlChunkSize: 0,
       requestOptions: {
         headers,
       },
@@ -46,7 +59,7 @@ export function createStream(url: string): { stream: Readable; type: StreamType 
     return { stream, type: StreamType.Arbitrary };
   } catch (error) {
     console.warn(`[ytdl-core] Failed to create stream, falling back to yt-dlp: ${(error as Error).message}`);
-    return spawnYtDlpStream(url, cookieHeader);
+    return spawnYtDlpStream(track.url, cookieHeader);
   }
 }
 
@@ -77,4 +90,36 @@ function spawnYtDlpStream(url: string, cookieHeader?: string) {
     stream: process.stdout,
     type: StreamType.Arbitrary,
   };
+}
+
+async function openHttpStream(url: string, headers: Record<string, string>, redirects = 0): Promise<Readable> {
+  if (redirects > 3) {
+    throw new Error("Too many redirects");
+  }
+
+  return new Promise((resolve, reject) => {
+    const request = https.get(url, { headers }, (response) => {
+      const status = response.statusCode ?? 0;
+
+      if (status >= 300 && status < 400 && response.headers.location) {
+        const location = response.headers.location.startsWith("http")
+          ? response.headers.location
+          : new URL(response.headers.location, url).toString();
+
+        response.resume(); // discard
+        openHttpStream(location, headers, redirects + 1).then(resolve).catch(reject);
+        return;
+      }
+
+      if (status < 200 || status >= 300) {
+        response.resume();
+        reject(new Error(`HTTP ${status}`));
+        return;
+      }
+
+      resolve(response);
+    });
+
+    request.on("error", reject);
+  });
 }
