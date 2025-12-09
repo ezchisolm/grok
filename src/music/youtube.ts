@@ -1,5 +1,4 @@
 import { Innertube } from "youtubei.js";
-import { StreamType } from "@discordjs/voice";
 import type { Track } from "./queue";
 import { getCookieHeader } from "../utils/cookies";
 
@@ -22,14 +21,11 @@ export async function resolveTrack(query: string, requestedBy: string): Promise<
   if (query.startsWith("http")) {
     const info = await client.getBasicInfo(query);
     const details = info.basic_info;
-    const streaming = await getStreamingInfo(client, details.id);
-
     return {
       title: details.title ?? "Unknown title",
       url: `https://www.youtube.com/watch?v=${details.id}`,
       requestedBy,
       duration: details.duration ?? undefined,
-      ...streaming,
     };
   }
 
@@ -53,28 +49,7 @@ export async function resolveTrack(query: string, requestedBy: string): Promise<
     url: `https://www.youtube.com/watch?v=${id}`,
     requestedBy,
     duration: seconds,
-    ...(await getStreamingInfo(client, id)),
   };
-}
-
-async function getStreamingInfo(client: Innertube, videoId?: string | null) {
-  if (!videoId) {
-    return {};
-  }
-
-  try {
-    const format = await client.getStreamingData(videoId, { type: "audio", format: "any", quality: "bestefficiency" });
-    const mime = format.mime_type ?? "";
-    const isOpus = mime.includes("opus") || mime.includes("webm");
-
-    return {
-      streamUrl: format.url,
-      inputType: isOpus ? StreamType.WebmOpus : StreamType.Arbitrary,
-    };
-  } catch (error) {
-    console.warn(`[youtubei] Failed to fetch streaming data for ${videoId}: ${(error as Error).message}`);
-    return {};
-  }
 }
 
 export function formatDuration(seconds?: number): string {

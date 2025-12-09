@@ -1,12 +1,8 @@
-import { StreamType } from "@discordjs/voice";
-
 export type Track = {
   title: string;
   url: string;
   requestedBy: string;
   duration?: number;
-  streamUrl?: string;
-  inputType?: StreamType;
 };
 
 export class MusicQueue {
