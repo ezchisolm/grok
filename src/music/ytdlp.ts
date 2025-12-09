@@ -3,7 +3,6 @@ import { Readable } from "stream";
 import { StreamType } from "@discordjs/voice";
 import path from "path";
 import fs from "fs";
-import ytdl from "@distube/ytdl-core";
 import https from "node:https";
 import { URL } from "node:url";
 import type { Track } from "./queue";
@@ -41,26 +40,11 @@ export async function createStream(track: Track): Promise<{ stream: Readable; ty
       const stream = await openHttpStream(track.streamUrl, headers);
       return { stream, type: track.inputType ?? StreamType.Arbitrary };
     } catch (error) {
-      console.warn(`[stream] Failed to use pre-fetched stream URL, falling back to ytdl: ${(error as Error).message}`);
+      console.warn(`[stream] Failed to use pre-fetched stream URL, falling back to yt-dlp: ${(error as Error).message}`);
     }
   }
 
-  try {
-    const stream = ytdl(track.url, {
-      quality: "highestaudio",
-      filter: "audioonly",
-      highWaterMark: 1 << 25,
-      dlChunkSize: 0,
-      requestOptions: {
-        headers,
-      },
-    });
-
-    return { stream, type: StreamType.Arbitrary };
-  } catch (error) {
-    console.warn(`[ytdl-core] Failed to create stream, falling back to yt-dlp: ${(error as Error).message}`);
-    return spawnYtDlpStream(track.url, cookieHeader);
-  }
+  return spawnYtDlpStream(track.url, cookieHeader);
 }
 
 function spawnYtDlpStream(url: string, cookieHeader?: string) {
