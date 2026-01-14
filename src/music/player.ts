@@ -63,7 +63,10 @@ export class GuildMusicPlayer {
     const position = this.queue.enqueue(track);
 
     if (this.player.state.status === AudioPlayerStatus.Idle && !this.processing) {
-      await this.startNext();
+      // Don't await - let streaming start in background so reply is sent immediately
+      this.startNext().catch((error) => {
+        this.logger.error(`Failed to start playback in guild ${this.guildId}: ${(error as Error).message}`);
+      });
     }
 
     return position;
