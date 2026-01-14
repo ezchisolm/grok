@@ -40,13 +40,25 @@ const play: BotCommand = {
     try {
       const requestedBy = `<@${interaction.user.id}>`;
       const controller = music.get(interaction.guild.id);
-      const [track] = await Promise.all([resolveTrack(query, requestedBy), controller.prepare(voiceChannel)]);
+      
+      logger.info(`[Play] Resolving track for query: "${query}"`);
+      const trackPromise = resolveTrack(query, requestedBy);
+      
+      logger.info(`[Play] Preparing voice connection`);
+      const preparePromise = controller.prepare(voiceChannel);
+
+      const [track] = await Promise.all([trackPromise, preparePromise]);
+      logger.info(`[Play] Track resolved: ${track.title} (${track.duration}s)`);
+      logger.info(`[Play] Voice connection ready`);
+
       const position = await controller.enqueue(track, voiceChannel);
+      logger.info(`[Play] Track enqueued at position ${position}`);
 
       const description = `**${track.title}** (${formatDuration(track.duration)}) • requested by ${requestedBy}`;
       const header = position === 1 ? "Starting playback" : `Queued at #${position}`;
 
       await interaction.editReply(`${header}: ${description}`);
+      logger.info(`[Play] Reply edited`);
     } catch (error) {
       logger.error(`Failed to execute /play: ${(error as Error).message}`);
       const message = error instanceof Error ? error.message : "Unknown error";

@@ -92,6 +92,7 @@ export class GuildMusicPlayer {
   }
 
   async prepare(channel: VoiceBasedChannel): Promise<void> {
+    this.logger.info(`[Player] Preparing connection for guild ${this.guildId}`);
     await this.ensureConnection(channel);
   }
 
@@ -101,11 +102,13 @@ export class GuildMusicPlayer {
       this.connection.joinConfig.channelId === channel.id &&
       this.connection.state.status !== VoiceConnectionStatus.Destroyed
     ) {
+      this.logger.info(`[Player] Using existing connection`);
       return this.connection;
     }
 
     this.destroyConnection();
 
+    this.logger.info(`[Player] Joining voice channel ${channel.id}`);
     this.connection = joinVoiceChannel({
       channelId: channel.id,
       guildId: channel.guild.id,
@@ -114,6 +117,7 @@ export class GuildMusicPlayer {
     });
 
     this.connection.on("stateChange", (_, newState) => {
+      this.logger.info(`[Player] Connection state changed to ${newState.status}`);
       if (newState.status === VoiceConnectionStatus.Disconnected || newState.status === VoiceConnectionStatus.Destroyed) {
         this.logger.warn(`Voice connection lost in guild ${this.guildId}; cleaning up.`);
         this.destroyConnection();
@@ -121,7 +125,9 @@ export class GuildMusicPlayer {
     });
 
     this.connection.subscribe(this.player);
+    this.logger.info(`[Player] Waiting for connection ready state...`);
     await entersState(this.connection, VoiceConnectionStatus.Ready, 20_000);
+    this.logger.info(`[Player] Connection ready`);
     return this.connection;
   }
 

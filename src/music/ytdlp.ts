@@ -33,10 +33,13 @@ export interface StreamResult {
  * - yt-dlp search: ~5000ms
  */
 export async function search(query: string): Promise<VideoDetails[]> {
+    console.log(`[play-dl] Searching for: "${query}"`);
     try {
         // Check if it's a YouTube URL
         if (playdl.yt_validate(query) === 'video') {
+            console.log(`[play-dl] Detected video URL`);
             const info = await playdl.video_info(query);
+            console.log(`[play-dl] Video info retrieved: ${info.video_details.title}`);
             return [{
                 title: info.video_details.title ?? 'Unknown title',
                 url: info.video_details.url,
@@ -45,10 +48,12 @@ export async function search(query: string): Promise<VideoDetails[]> {
         }
 
         // Search YouTube
+        console.log(`[play-dl] Performing search query`);
         const results = await playdl.search(query, { 
             limit: 1,
             source: { youtube: 'video' }
         });
+        console.log(`[play-dl] Search results found: ${results.length}`);
 
         if (results.length === 0) {
             return [];
