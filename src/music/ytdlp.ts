@@ -1,11 +1,17 @@
 import playdl, { YouTubeVideo } from 'play-dl';
 import { spawn } from 'child_process';
+import { existsSync } from 'fs';
 import { Readable } from 'stream';
 import { StreamType } from '@discordjs/voice';
 import path from 'path';
 
 // Path to yt-dlp binary for streaming (signature decryption works reliably)
 const YTDLP_PATH = path.resolve(process.cwd(), 'yt-dlp');
+
+// Path to cookies file - can be overridden via YOUTUBE_COOKIES_PATH env var
+const COOKIES_PATH = process.env.YOUTUBE_COOKIES_PATH 
+    ? path.resolve(process.env.YOUTUBE_COOKIES_PATH)
+    : path.resolve(process.cwd(), 'cookies.txt');
 
 export interface VideoDetails {
     title: string;
@@ -74,8 +80,17 @@ export async function createStream(url: string): Promise<StreamResult> {
             '-q', '--no-warnings',
             '--buffer-size', '16K',
             '-o', '-',
-            url
         ];
+
+        // Add cookies if file exists (required for YouTube bot detection bypass)
+        if (existsSync(COOKIES_PATH)) {
+            args.push('--cookies', COOKIES_PATH);
+            console.log(`[yt-dlp] Using cookies from: ${COOKIES_PATH}`);
+        } else {
+            console.warn(`[yt-dlp] Warning: No cookies file found at ${COOKIES_PATH}. YouTube may block requests.`);
+        }
+
+        args.push(url);
 
         console.log(`[yt-dlp] Creating stream for: ${url}`);
         
