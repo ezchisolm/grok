@@ -185,7 +185,7 @@ export class GuildMusicPlayer {
 
   private async createStream(track: Track) {
     try {
-      const stream = ytdlp.createStream(track.url);
+      const stream = ytdlp.createStream(track.streamUrl);
       this.logger.info(`Starting stream for "${track.title}" in guild ${this.guildId}`);
       return stream;
     } catch (error) {

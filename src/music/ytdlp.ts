@@ -3,6 +3,7 @@ import { Readable } from 'stream';
 import { StreamType } from '@discordjs/voice';
 import path from 'path';
 import fs from 'fs';
+import ffmpegStatic from 'ffmpeg-static';
 
 const YTDLP_PATH = path.resolve(process.cwd(), 'yt-dlp');
 const COOKIES_PATH = path.resolve(process.cwd(), 'cookies.txt');
@@ -22,6 +23,30 @@ export interface VideoDetails {
     title: string;
     url: string;
     durationInSec: number;
+    streamUrl: string;
+}
+
+interface YtDlpFormat {
+    url: string;
+    vcodec: string;
+    acodec: string;
+    abr?: number;
+    format_id: string;
+}
+
+function extractBestAudioUrl(formats: YtDlpFormat[]): string {
+    // Filter for audio-only formats (no video codec, has audio codec)
+    const audioFormats = formats.filter(
+        f => f.vcodec === 'none' && f.acodec && f.acodec !== 'none' && f.url
+    );
+
+    if (audioFormats.length === 0) {
+        throw new Error('No audio formats available for this video');
+    }
+
+    // Sort by audio bitrate (highest first) and pick the best
+    audioFormats.sort((a, b) => (b.abr || 0) - (a.abr || 0));
+    return audioFormats[0]!.url;
 }
 
 export async function getVideoInfo(url: string): Promise<VideoDetails> {
@@ -65,10 +90,12 @@ export async function getVideoInfo(url: string): Promise<VideoDetails> {
             if (code === 0) {
                 try {
                     const info = JSON.parse(data);
+                    const streamUrl = extractBestAudioUrl(info.formats || []);
                     resolve({
                         title: info.title,
                         url: info.webpage_url,
-                        durationInSec: info.duration
+                        durationInSec: info.duration,
+                        streamUrl
                     });
                 } catch (e) {
                     reject(new Error(`Failed to parse yt-dlp output: ${e}`));
@@ -80,44 +107,39 @@ export async function getVideoInfo(url: string): Promise<VideoDetails> {
     });
 }
 
-export function createStream(url: string): { stream: Readable; type: StreamType } {
-    // -f bestaudio: download best audio quality
-    // -o -: output to stdout
-    // -q: quiet (no progress bar)
-    // --no-warnings: suppress warnings
-    // --buffer-size 16K: minimize buffer in yt-dlp to stream faster
+export function createStream(streamUrl: string): { stream: Readable; type: StreamType } {
+    // Use FFmpeg directly with the pre-fetched stream URL
+    // This avoids spawning yt-dlp again, saving ~10-15 seconds
+    const ffmpegPath = ffmpegStatic as unknown as string;
+    
     const args = [
-        '-f', 'bestaudio',
-        '-q', '--no-warnings',
-        '--buffer-size', '16K',
-        '--js-runtimes', `bun:${BUN_PATH}`
+        '-reconnect', '1',
+        '-reconnect_streamed', '1',
+        '-reconnect_delay_max', '5',
+        '-i', streamUrl,
+        '-analyzeduration', '0',
+        '-loglevel', '0',
+        '-ar', '48000',
+        '-ac', '2',
+        '-f', 'opus',
+        'pipe:1'
     ];
 
-    if (fs.existsSync(COOKIES_PATH)) {
-        args.push('--cookies', COOKIES_PATH);
-    } else {
-        args.push('--extractor-args', 'youtube:player_client=android_music');
-    }
-    
-    args.push('-o', '-', url);
-
-    const process = spawn(YTDLP_PATH, args, {
+    const ffmpeg = spawn(ffmpegPath, args, {
         stdio: ['ignore', 'pipe', 'ignore']
     });
 
-    
-    process.on('error', (err) => {
-        console.error(`[yt-dlp] Failed to spawn process for stream: ${err.message}`);
+    ffmpeg.on('error', (err) => {
+        console.error(`[ffmpeg] Failed to spawn process: ${err.message}`);
     });
 
-    if (!process.stdout) {
-
-        throw new Error('Failed to create stdout stream');
+    if (!ffmpeg.stdout) {
+        throw new Error('Failed to create FFmpeg stdout stream');
     }
 
     return {
-        stream: process.stdout,
-        type: StreamType.Arbitrary
+        stream: ffmpeg.stdout,
+        type: StreamType.OggOpus
     };
 }
 
@@ -172,10 +194,12 @@ export async function search(query: string): Promise<VideoDetails[]> {
             if (code === 0) {
                 try {
                     const info = JSON.parse(data);
+                    const streamUrl = extractBestAudioUrl(info.formats || []);
                     resolve([{
                         title: info.title,
                         url: info.webpage_url,
-                        durationInSec: info.duration
+                        durationInSec: info.duration,
+                        streamUrl
                     }]);
                 } catch (e) {
                     console.error(`[yt-dlp] JSON parse error for "${query}":`, e);
