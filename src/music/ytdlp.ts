@@ -76,7 +76,7 @@ export async function search(query: string): Promise<VideoDetails[]> {
 export async function createStream(url: string): Promise<StreamResult> {
     return new Promise((resolve, reject) => {
         const args = [
-            '-f', 'bestaudio',
+            '-f', 'bestaudio/best',
             '-q', '--no-warnings',
             '--buffer-size', '16K',
             '-o', '-',
