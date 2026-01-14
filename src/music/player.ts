@@ -4,7 +4,6 @@ import {
   AudioPlayer,
   AudioPlayerStatus,
   NoSubscriberBehavior,
-  StreamType,
   VoiceConnection,
   VoiceConnectionStatus,
   createAudioPlayer,
@@ -185,7 +184,7 @@ export class GuildMusicPlayer {
 
   private async createStream(track: Track) {
     try {
-      const stream = ytdlp.createStream(track.streamUrl);
+      const stream = await ytdlp.createStream(track.url);
       this.logger.info(`Starting stream for "${track.title}" in guild ${this.guildId}`);
       return stream;
     } catch (error) {
@@ -194,24 +193,6 @@ export class GuildMusicPlayer {
       );
       throw error;
     }
-  }
-
-  private extractVideoId(url: string): string | null {
-    // Extract video ID from various YouTube URL formats
-    const patterns = [
-      /(?:youtube\.com\/watch\?v=|youtu\.be\/)([^&\n?#]+)/,
-      /youtube\.com\/embed\/([^&\n?#]+)/,
-      /youtube\.com\/v\/([^&\n?#]+)/,
-    ];
-
-    for (const pattern of patterns) {
-      const match = url.match(pattern);
-      if (match && match[1]) {
-        return match[1];
-      }
-    }
-
-    return null;
   }
 }
 

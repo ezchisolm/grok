@@ -12,12 +12,11 @@
   },
   "dependencies": {
     "@discordjs/voice": "^0.18.0",
-    "@distube/ytdl-core": "^4.16.12",
     "@upstash/context7-sdk": "^0.1.0",
     "discord.js": "^14.16.3",
     "ffmpeg-static": "^5.2.0",
     "libsodium-wrappers": "^0.7.13",
-    "ytdl-core": "^4.11.5"
+    "play-dl": "^1.9.7"
   },
   "devDependencies": {
     "@types/node": "^22.10.1",

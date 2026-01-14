@@ -12,7 +12,6 @@ export async function resolveTrack(query: string, requestedBy: string): Promise<
   return {
     title: first.title ?? "Unknown title",
     url: first.url,
-    streamUrl: first.streamUrl,
     requestedBy,
     duration: first.durationInSec,
   };

@@ -1,214 +1,131 @@
-import { spawn, execSync } from 'child_process';
+import playdl, { YouTubeVideo } from 'play-dl';
+import { spawn } from 'child_process';
 import { Readable } from 'stream';
 import { StreamType } from '@discordjs/voice';
 import path from 'path';
-import fs from 'fs';
-import ffmpegStatic from 'ffmpeg-static';
 
+// Path to yt-dlp binary for streaming (signature decryption works reliably)
 const YTDLP_PATH = path.resolve(process.cwd(), 'yt-dlp');
-const COOKIES_PATH = path.resolve(process.cwd(), 'cookies.txt');
-
-// Get the full path to Bun
-let BUN_PATH = 'bun';
-try {
-    BUN_PATH = execSync('which bun', { encoding: 'utf-8' }).trim();
-    console.log(`[yt-dlp] Found Bun at: ${BUN_PATH}`);
-} catch (e) {
-    console.warn('[yt-dlp] Could not find Bun path, using "bun" and hoping it\'s in PATH');
-}
-
-
 
 export interface VideoDetails {
     title: string;
     url: string;
     durationInSec: number;
-    streamUrl: string;
 }
 
-interface YtDlpFormat {
-    url: string;
-    vcodec: string;
-    acodec: string;
-    abr?: number;
-    format_id: string;
+export interface StreamResult {
+    stream: Readable;
+    type: StreamType;
 }
 
-function extractBestAudioUrl(formats: YtDlpFormat[]): string {
-    // Filter for audio-only formats (no video codec, has audio codec)
-    const audioFormats = formats.filter(
-        f => f.vcodec === 'none' && f.acodec && f.acodec !== 'none' && f.url
-    );
-
-    if (audioFormats.length === 0) {
-        throw new Error('No audio formats available for this video');
-    }
-
-    // Sort by audio bitrate (highest first) and pick the best
-    audioFormats.sort((a, b) => (b.abr || 0) - (a.abr || 0));
-    return audioFormats[0]!.url;
-}
-
-export async function getVideoInfo(url: string): Promise<VideoDetails> {
-    return new Promise((resolve, reject) => {
-        const args = [
-            '--dump-json',
-            '--js-runtimes', `bun:${BUN_PATH}`
-        ];
-        
-        // Add cookies if available
-        if (fs.existsSync(COOKIES_PATH)) {
-            args.push('--cookies', COOKIES_PATH);
-        } else {
-            // Without cookies, use android_music client to avoid some bot detection
-            args.push('--extractor-args', 'youtube:player_client=android_music');
-        }
-        
-        args.push(url);
-        
-        console.log(`[yt-dlp] Running: ${YTDLP_PATH} ${args.join(' ')}`);
-        
-        const process = spawn(YTDLP_PATH, args);
-        let data = '';
-        let errorData = '';
-
-
-        process.on('error', (err) => {
-            reject(new Error(`Failed to spawn yt-dlp at ${YTDLP_PATH}: ${err.message}`));
-        });
-
-        process.stdout.on('data', (chunk) => {
-
-            data += chunk;
-        });
-
-        process.stderr.on('data', (chunk) => {
-            errorData += chunk;
-        });
-
-        process.on('close', (code) => {
-            if (code === 0) {
-                try {
-                    const info = JSON.parse(data);
-                    const streamUrl = extractBestAudioUrl(info.formats || []);
-                    resolve({
-                        title: info.title,
-                        url: info.webpage_url,
-                        durationInSec: info.duration,
-                        streamUrl
-                    });
-                } catch (e) {
-                    reject(new Error(`Failed to parse yt-dlp output: ${e}`));
-                }
-            } else {
-                reject(new Error(`yt-dlp exited with code ${code}: ${errorData}`));
-            }
-        });
-    });
-}
-
-export function createStream(streamUrl: string): { stream: Readable; type: StreamType } {
-    // Use FFmpeg directly with the pre-fetched stream URL
-    // This avoids spawning yt-dlp again, saving ~10-15 seconds
-    const ffmpegPath = ffmpegStatic as unknown as string;
-    
-    const args = [
-        '-reconnect', '1',
-        '-reconnect_streamed', '1',
-        '-reconnect_delay_max', '5',
-        '-i', streamUrl,
-        '-analyzeduration', '0',
-        '-loglevel', '0',
-        '-ar', '48000',
-        '-ac', '2',
-        '-f', 'opus',
-        'pipe:1'
-    ];
-
-    const ffmpeg = spawn(ffmpegPath, args, {
-        stdio: ['ignore', 'pipe', 'ignore']
-    });
-
-    ffmpeg.on('error', (err) => {
-        console.error(`[ffmpeg] Failed to spawn process: ${err.message}`);
-    });
-
-    if (!ffmpeg.stdout) {
-        throw new Error('Failed to create FFmpeg stdout stream');
-    }
-
-    return {
-        stream: ffmpeg.stdout,
-        type: StreamType.OggOpus
-    };
-}
-
+/**
+ * Search YouTube for videos matching the query, or get info for a direct URL.
+ * Uses play-dl which is ~10x faster than yt-dlp (no process spawning).
+ * 
+ * Typical times:
+ * - play-dl search: ~500ms
+ * - yt-dlp search: ~5000ms
+ */
 export async function search(query: string): Promise<VideoDetails[]> {
-    // Check if it's a URL
-    if (query.startsWith('http')) {
-        try {
-            const info = await getVideoInfo(query);
-            return [info];
-        } catch (e) {
-            console.error(`[yt-dlp] getVideoInfo failed for URL "${query}":`, e);
+    try {
+        // Check if it's a YouTube URL
+        if (playdl.yt_validate(query) === 'video') {
+            const info = await playdl.video_info(query);
+            return [{
+                title: info.video_details.title ?? 'Unknown title',
+                url: info.video_details.url,
+                durationInSec: info.video_details.durationInSec ?? 0
+            }];
+        }
+
+        // Search YouTube
+        const results = await playdl.search(query, { 
+            limit: 1,
+            source: { youtube: 'video' }
+        });
+
+        if (results.length === 0) {
             return [];
         }
-    }
 
+        const video = results[0] as YouTubeVideo;
+        return [{
+            title: video.title ?? 'Unknown title',
+            url: video.url,
+            durationInSec: video.durationInSec ?? 0
+        }];
+    } catch (error) {
+        console.error(`[play-dl] Search failed for "${query}":`, error);
+        return [];
+    }
+}
+
+/**
+ * Create an audio stream from a YouTube URL.
+ * Uses yt-dlp for reliable signature decryption and streaming.
+ * 
+ * Note: We use yt-dlp here because pure JS libraries (play-dl, youtubei.js)
+ * currently have issues with YouTube's SABR streaming changes.
+ */
+export async function createStream(url: string): Promise<StreamResult> {
     return new Promise((resolve, reject) => {
         const args = [
-            '--dump-json',
-            '--js-runtimes', `bun:${BUN_PATH}`
+            '-f', 'bestaudio',
+            '-q', '--no-warnings',
+            '--buffer-size', '16K',
+            '-o', '-',
+            url
         ];
-        
-        if (fs.existsSync(COOKIES_PATH)) {
-            args.push('--cookies', COOKIES_PATH);
-        } else {
-            args.push('--extractor-args', 'youtube:player_client=android_music');
-        }
-        
-        args.push(`ytsearch1:${query}`);
 
-        console.log(`[yt-dlp] Running: ${YTDLP_PATH} ${args.join(' ')}`);
-
-        const process = spawn(YTDLP_PATH, args);
-        let data = '';
-        let errorData = '';
-
+        console.log(`[yt-dlp] Creating stream for: ${url}`);
         
+        const process = spawn(YTDLP_PATH, args, {
+            stdio: ['ignore', 'pipe', 'pipe']
+        });
+
+        let hasResolved = false;
+
         process.on('error', (err) => {
-            console.error(`[yt-dlp] Failed to spawn at ${YTDLP_PATH}:`, err);
-            resolve([]);
-        });
-
-        process.stdout.on('data', (chunk) => {
-
-            data += chunk;
-        });
-
-        process.stderr.on('data', (chunk) => {
-            errorData += chunk;
-        });
-
-        process.on('close', (code) => {
-            if (code === 0) {
-                try {
-                    const info = JSON.parse(data);
-                    const streamUrl = extractBestAudioUrl(info.formats || []);
-                    resolve([{
-                        title: info.title,
-                        url: info.webpage_url,
-                        durationInSec: info.duration,
-                        streamUrl
-                    }]);
-                } catch (e) {
-                    console.error(`[yt-dlp] JSON parse error for "${query}":`, e);
-                    resolve([]);
-                }
-            } else {
-                console.error(`[yt-dlp] Search failed for "${query}". Exit code: ${code}. Error: ${errorData}`);
-                resolve([]);
+            console.error(`[yt-dlp] Failed to spawn: ${err.message}`);
+            if (!hasResolved) {
+                hasResolved = true;
+                reject(new Error(`Failed to spawn yt-dlp: ${err.message}`));
             }
         });
+
+        process.stderr?.on('data', (data) => {
+            const msg = data.toString();
+            if (msg.includes('ERROR')) {
+                console.error(`[yt-dlp] ${msg}`);
+            }
+        });
+
+        // Wait for first data to confirm stream is working
+        process.stdout?.once('data', () => {
+            if (!hasResolved) {
+                hasResolved = true;
+                resolve({
+                    stream: process.stdout!,
+                    type: StreamType.Arbitrary
+                });
+            }
+        });
+
+        // Handle case where stream closes without data
+        process.on('close', (code) => {
+            if (!hasResolved) {
+                hasResolved = true;
+                reject(new Error(`yt-dlp exited with code ${code} without producing audio`));
+            }
+        });
+
+        // Timeout after 15 seconds
+        setTimeout(() => {
+            if (!hasResolved) {
+                hasResolved = true;
+                process.kill();
+                reject(new Error('Timeout waiting for audio stream'));
+            }
+        }, 15000);
     });
 }
