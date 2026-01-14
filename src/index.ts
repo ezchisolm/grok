@@ -1,4 +1,4 @@
-import { Client, Events, GatewayIntentBits } from "discord.js";
+import { Client, Events, GatewayIntentBits, MessageFlags } from "discord.js";
 import { commandMap } from "./commands/index";
 import { loadEnv } from "./utils/env";
 import { logger } from "./utils/logger";
@@ -31,7 +31,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
   const command = commandMap.get(interaction.commandName);
 
   if (!command) {
-    await interaction.reply({ content: "I don't know that command.", ephemeral: true });
+    await interaction.reply({ content: "I don't know that command.", flags: MessageFlags.Ephemeral });
     return;
   }
 
@@ -40,10 +40,14 @@ client.on(Events.InteractionCreate, async (interaction) => {
   } catch (error) {
     logger.error(`Error executing command ${interaction.commandName}: ${(error as Error).message}`);
 
-    if (interaction.deferred || interaction.replied) {
-      await interaction.editReply("Sorry, something went wrong running that command.");
-    } else {
-      await interaction.reply({ content: "Sorry, something went wrong running that command.", ephemeral: true });
+    try {
+      if (interaction.deferred || interaction.replied) {
+        await interaction.editReply("Sorry, something went wrong running that command.");
+      } else {
+        await interaction.reply({ content: "Sorry, something went wrong running that command.", flags: MessageFlags.Ephemeral });
+      }
+    } catch (replyError) {
+      logger.error(`Failed to send error message to user: ${(replyError as Error).message}`);
     }
   }
 });
