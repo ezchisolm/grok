@@ -1,6 +1,7 @@
 import { existsSync } from 'fs';
 import { StreamType } from '@discordjs/voice';
 import path from 'path';
+import type { Readable } from 'stream';
 import { globalProcessManager } from '../utils/process-manager';
 import { spawn, type ChildProcess } from 'child_process';
 
@@ -274,7 +275,7 @@ const FFMPEG_STREAM_ARGS = [
     '-ac', '2',               // Channels: stereo
     '-b:a', '128k',           // Bitrate: 128kbps
     '-application', 'audio',  // Opus audio application
-    '-frame_duration', '60',  // Frame duration: 60ms (more stable than 20ms)
+    '-frame_duration', '20',  // Frame duration: 20ms (Discord standard)
     'pipe:1',                 // Output to stdout
 ];
 

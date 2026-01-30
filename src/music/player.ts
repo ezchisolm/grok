@@ -335,10 +335,11 @@ export class GuildMusicPlayer {
     await this.startNext();
   }
 
-  private handlePlaybackError(error: Error & { resource?: { metadata?: { title?: string; url?: string } } }): void {
+  private handlePlaybackError(error: Error & { resource?: { metadata?: unknown } }): void {
     // Enhanced error logging with metadata if available
-    const resourceInfo = error.resource?.metadata 
-      ? ` | Track: "${error.resource.metadata.title}"` 
+    const metadata = error.resource?.metadata as { title?: string; url?: string } | undefined;
+    const resourceInfo = metadata?.title 
+      ? ` | Track: "${metadata.title}"` 
       : '';
     this.logger.error(`Playback error in guild ${this.guildId}${resourceInfo}: ${error.message}`);
     
