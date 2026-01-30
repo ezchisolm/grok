@@ -276,6 +276,7 @@ const FFMPEG_STREAM_ARGS = [
     '-b:a', '128k',           // Bitrate: 128kbps
     '-application', 'audio',  // Opus audio application
     '-frame_duration', '20',  // Frame duration: 20ms (Discord standard)
+    '-threads', '1',          // Single thread for consistent timing
     'pipe:1',                 // Output to stdout
 ];
 

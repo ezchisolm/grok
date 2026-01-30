@@ -492,20 +492,16 @@ export class GuildMusicPlayer {
       
       // Create resource with metadata for better error tracking
       // Per Discord.js docs: metadata helps identify resources in error handlers
+      // Note: inlineVolume disabled to prevent timing issues (VolumeTransformer can cause latency)
       const resource = createAudioResource(stream.stream, {
         inputType: stream.type,
-        inlineVolume: this.volume !== 1.0,
+        inlineVolume: false,  // Disabled to prevent TimeoutNegativeWarning
         metadata: {
           title: next.title,
           url: next.url,
           guildId: this.guildId,
         },
       });
-
-      // Apply volume if using inlineVolume
-      if (this.volume !== 1.0 && resource.volume) {
-        resource.volume.setVolumeLogarithmic(this.volume);
-      }
 
       this.player.play(resource);
       this.currentTrack = next;
