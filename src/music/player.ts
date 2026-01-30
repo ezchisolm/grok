@@ -42,6 +42,7 @@ export class GuildMusicPlayer {
   private currentTrack?: Track;
   private processing = false;
   private idleTimer?: ReturnType<typeof setTimeout>;
+  private currentStreamCleanup?: () => void;
   private reconnectAttempts = 0;
   private readonly maxReconnectAttempts = 5;
   private reconnectTimer?: ReturnType<typeof setTimeout>;
@@ -69,6 +70,12 @@ export class GuildMusicPlayer {
       this.handleTrackEnd().catch((error) => {
         this.logger.error(`Failed advancing queue for guild ${this.guildId}: ${(error as Error).message}`);
       });
+    });
+
+    this.player.on("stateChange", (oldState, newState) => {
+      if (oldState.status !== newState.status) {
+        this.logger.info(`[Player] Audio state: ${oldState.status} -> ${newState.status}`);
+      }
     });
 
     this.player.on("error", (error) => {
@@ -123,6 +130,7 @@ export class GuildMusicPlayer {
 
   async skip(): Promise<void> {
     this.retryCount = 0;
+    this.cleanupCurrentStream();
     this.player.stop(true);
   }
 
@@ -130,7 +138,8 @@ export class GuildMusicPlayer {
     this.retryCount = 0;
     this.queue.clear();
     this.currentTrack = undefined;
-    this.prebufferedStream = undefined; // Clear prebuffered stream
+    this.cleanupCurrentStream();
+    this.clearPrebufferedStream();
     this.player.stop(true);
     this.scheduleDisconnect();
   }
@@ -465,6 +474,10 @@ export class GuildMusicPlayer {
     this.processing = true;
     this.clearIdleTimer();
 
+    // Ensure any previous stream processes are stopped before starting a new track.
+    // This prevents leaked yt-dlp/FFmpeg processes when skipping/stopping.
+    this.cleanupCurrentStream();
+
     const next = this.queue.shift();
 
     if (!next) {
@@ -483,12 +496,17 @@ export class GuildMusicPlayer {
 
     try {
       // Use prebuffered stream if available for this track, otherwise create new
-      const stream = this.prebufferedStream?.track.url === next.url 
-        ? this.prebufferedStream.stream 
+      const usePrebuffered = this.prebufferedStream?.track.url === next.url;
+      const stream = usePrebuffered
+        ? this.prebufferedStream!.stream
         : await this.createStream(next);
-      
-      // Clear prebuffered stream as we're using it now
-      this.prebufferedStream = undefined;
+
+      // Clear prebuffered stream only if we're using it now
+      if (usePrebuffered) {
+        this.prebufferedStream = undefined;
+      }
+
+      this.currentStreamCleanup = stream.cleanup;
       
       // Create resource with metadata for better error tracking
       // Per Discord.js docs: metadata helps identify resources in error handlers
@@ -512,7 +530,8 @@ export class GuildMusicPlayer {
     } catch (error) {
       this.logger.error(`Failed to start track "${next.title}" in guild ${this.guildId}: ${(error as Error).message}`);
       // Clear prebuffered stream on error
-      this.prebufferedStream = undefined;
+      this.clearPrebufferedStream();
+      this.cleanupCurrentStream();
       // Skip to next track on failure
       this.processing = false;
       await this.startNext();
@@ -540,6 +559,8 @@ export class GuildMusicPlayer {
     this.clearIdleTimer();
     this.clearReconnectTimer();
     this.currentTrack = undefined;
+    this.cleanupCurrentStream();
+    this.clearPrebufferedStream();
     
     // Only destroy if connection exists and isn't already destroyed
     if (this.connection && this.connection.state.status !== VoiceConnectionStatus.Destroyed) {
@@ -579,6 +600,9 @@ export class GuildMusicPlayer {
     // Don't prebuffer if already prebuffered
     if (this.prebufferedStream?.track.url === nextTrack.url) return;
 
+    // If we already have a different prebuffered stream, clean it up before starting a new one.
+    this.clearPrebufferedStream();
+
     this.logger.info(`[Prebuffer] Starting background extraction for: ${nextTrack.title}`);
 
     // Start prebuffering in background (don't await)
@@ -589,8 +613,36 @@ export class GuildMusicPlayer {
       })
       .catch(error => {
         this.logger.warn(`[Prebuffer] Failed to prebuffer "${nextTrack.title}": ${(error as Error).message}`);
-        this.prebufferedStream = undefined;
+        this.clearPrebufferedStream();
       });
+  }
+
+  private cleanupCurrentStream(): void {
+    if (!this.currentStreamCleanup) {
+      return;
+    }
+
+    try {
+      this.currentStreamCleanup();
+    } catch {
+      // Ignore cleanup errors
+    } finally {
+      this.currentStreamCleanup = undefined;
+    }
+  }
+
+  private clearPrebufferedStream(): void {
+    if (!this.prebufferedStream) {
+      return;
+    }
+
+    try {
+      this.prebufferedStream.stream.cleanup();
+    } catch {
+      // Ignore cleanup errors
+    } finally {
+      this.prebufferedStream = undefined;
+    }
   }
 }
 

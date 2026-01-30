@@ -1,5 +1,6 @@
 import { existsSync } from 'fs';
 import { StreamType } from '@discordjs/voice';
+import ffmpegPath from 'ffmpeg-static';
 import path from 'path';
 import type { Readable } from 'stream';
 import { globalProcessManager } from '../utils/process-manager';
@@ -75,6 +76,7 @@ export interface VideoDetails {
 export interface StreamResult {
     stream: Readable;
     type: StreamType;
+    cleanup: () => void;
 }
 
 /**
@@ -312,18 +314,44 @@ export async function createStream(url: string): Promise<StreamResult> {
             stdio: ['ignore', 'pipe', 'pipe']
         }) as ChildProcess;
 
+        const ffmpegExecutable = ffmpegPath ?? 'ffmpeg';
+
         // Spawn FFmpeg to transcode to OggOpus (optimized for Discord)
-        const ffmpegProc = spawn('ffmpeg', FFMPEG_STREAM_ARGS, {
+        const ffmpegProc = spawn(ffmpegExecutable, FFMPEG_STREAM_ARGS, {
             stdio: ['pipe', 'pipe', 'pipe']
         }) as ChildProcess;
 
-        // Track FFmpeg process (it's the final output)
-        const command = `yt-dlp | ffmpeg demux "${url.substring(0, 50)}..."`;
-        const tracked = globalProcessManager.track(ffmpegProc, command, 60000);
+        // Track streaming processes with no timeout (playback can be longer than 60s)
+        const ytdlpCommand = `yt-dlp stream "${url.substring(0, 50)}..."`;
+        const ffmpegCommand = `ffmpeg stream "${url.substring(0, 50)}..."`;
+        const ytdlpTracked = globalProcessManager.track(ytdlpProc, ytdlpCommand, 0);
+        const ffmpegTracked = globalProcessManager.track(ffmpegProc, ffmpegCommand, 0);
 
         let hasResolved = false;
+        let hasCleanedUp = false;
         let ytdlpError = '';
         let ffmpegError = '';
+
+        const cleanup = () => {
+            if (hasCleanedUp) {
+                return;
+            }
+            hasCleanedUp = true;
+
+            try {
+                globalProcessManager.kill(ffmpegTracked, 9);
+            } catch {
+                // Ignore
+            }
+            try {
+                globalProcessManager.kill(ytdlpTracked, 9);
+            } catch {
+                // Ignore
+            }
+
+            globalProcessManager.remove(ffmpegTracked);
+            globalProcessManager.remove(ytdlpTracked);
+        };
 
         // Pipe yt-dlp stdout to FFmpeg stdin
         ytdlpProc.stdout!.pipe(ffmpegProc.stdin!);
@@ -354,8 +382,7 @@ export async function createStream(url: string): Promise<StreamResult> {
         ytdlpProc.on('error', (err: Error) => {
             if (!hasResolved) {
                 hasResolved = true;
-                ffmpegProc.kill();
-                globalProcessManager.remove(tracked);
+                cleanup();
                 reject(new Error(`yt-dlp error: ${err.message}`));
             }
         });
@@ -363,8 +390,7 @@ export async function createStream(url: string): Promise<StreamResult> {
         ffmpegProc.on('error', (err: Error) => {
             if (!hasResolved) {
                 hasResolved = true;
-                ytdlpProc.kill();
-                globalProcessManager.remove(tracked);
+                cleanup();
                 reject(new Error(`FFmpeg error: ${err.message}`));
             }
         });
@@ -372,19 +398,22 @@ export async function createStream(url: string): Promise<StreamResult> {
         ffmpegProc.on('exit', (exitCode: number | null) => {
             if (!hasResolved && exitCode !== 0 && exitCode !== null) {
                 hasResolved = true;
-                globalProcessManager.remove(tracked);
+                cleanup();
                 reject(new Error(`FFmpeg failed with code ${exitCode}: ${ffmpegError.slice(0, 200)}`));
             }
         });
 
         // Use FFmpeg stdout as the audio stream (OggOpus format)
-        ffmpegProc.stdout!.once('data', () => {
+        // Important: use 'readable' (not 'data') to avoid consuming/discarding the
+        // first bytes before @discordjs/voice attaches its demuxer.
+        ffmpegProc.stdout!.once('readable', () => {
             if (!hasResolved) {
                 hasResolved = true;
                 log(`Stream started successfully (OggOpus transcoded for Discord)`);
                 resolve({
                     stream: ffmpegProc.stdout!,
-                    type: StreamType.OggOpus  // FFmpeg outputs OggOpus
+                    type: StreamType.OggOpus,  // FFmpeg outputs OggOpus
+                    cleanup,
                 });
             }
         });
@@ -392,25 +421,21 @@ export async function createStream(url: string): Promise<StreamResult> {
         ffmpegProc.stdout!.on('error', (err: Error) => {
             if (!hasResolved) {
                 hasResolved = true;
-                ytdlpProc.kill();
-                ffmpegProc.kill();
-                globalProcessManager.remove(tracked);
+                cleanup();
                 reject(new Error(`Stream error: ${err.message}`));
             }
         });
 
         // Cleanup tracking when stream ends
         ffmpegProc.stdout!.on('end', () => {
-            globalProcessManager.remove(tracked);
+            cleanup();
         });
 
         // Timeout after 15 seconds
         setTimeout(() => {
             if (!hasResolved) {
                 hasResolved = true;
-                ytdlpProc.kill();
-                ffmpegProc.kill();
-                globalProcessManager.remove(tracked);
+                cleanup();
                 reject(new Error('Timeout waiting for audio stream'));
             }
         }, 15000);
