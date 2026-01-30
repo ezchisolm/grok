@@ -260,15 +260,24 @@ export async function extractStreamUrl(url: string): Promise<string> {
 }
 
 /**
- * FFmpeg arguments for demuxing WebM to OggOpus (no re-encoding).
- * Uses -copy to extract Opus frames without transcoding - much faster than encoding.
+ * FFmpeg arguments for transcoding to OggOpus optimized for Discord streaming.
+ * Using libopus encoder with proper timing for reliable playback.
  */
-const FFMPEG_DEMUX_ARGS = [
-    '-i', 'pipe:0',           // Read WebM from stdin
+const FFMPEG_STREAM_ARGS = [
+    '-re',                    // Read input at native frame rate (important for streaming)
+    '-i', 'pipe:0',           // Read from stdin
     '-analyzeduration', '0',  // Disable analysis for faster startup
     '-loglevel', 'error',     // Only show errors
-    '-c:a', 'copy',           // Copy audio stream (no re-encoding)
-    '-f', 'opus',             // Output as Ogg Opus
+    '-vn',                    // No video
+    '-c:a', 'libopus',        // Use libopus encoder
+    '-f', 'opus',             // Output format: Ogg Opus
+    '-ar', '48000',           // Sample rate: 48kHz (Discord requirement)
+    '-ac', '2',               // Channels: stereo
+    '-b:a', '128k',           // Bitrate: 128kbps
+    '-application', 'audio',  // Opus audio application
+    '-vbr', 'on',             // Variable bitrate
+    '-frame_duration', '20',  // Frame duration: 20ms
+    '-packet_loss', '1',      // Expect some packet loss
     'pipe:1',                 // Output to stdout
 ];
 
@@ -304,8 +313,8 @@ export async function createStream(url: string): Promise<StreamResult> {
             stdio: ['ignore', 'pipe', 'pipe']
         }) as ChildProcess;
 
-        // Spawn FFmpeg to demux WebM to OggOpus (no transcoding, just container conversion)
-        const ffmpegProc = spawn('ffmpeg', FFMPEG_DEMUX_ARGS, {
+        // Spawn FFmpeg to transcode to OggOpus (optimized for Discord)
+        const ffmpegProc = spawn('ffmpeg', FFMPEG_STREAM_ARGS, {
             stdio: ['pipe', 'pipe', 'pipe']
         }) as ChildProcess;
 
@@ -373,7 +382,7 @@ export async function createStream(url: string): Promise<StreamResult> {
         ffmpegProc.stdout!.once('data', () => {
             if (!hasResolved) {
                 hasResolved = true;
-                log(`Stream started successfully (WebM demuxed to OggOpus)`);
+                log(`Stream started successfully (OggOpus transcoded for Discord)`);
                 resolve({
                     stream: ffmpegProc.stdout!,
                     type: StreamType.OggOpus  // FFmpeg outputs OggOpus
