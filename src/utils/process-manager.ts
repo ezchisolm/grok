@@ -1,12 +1,21 @@
 // Process manager for tracking and cleaning up spawned processes
 
 import type { Subprocess } from "bun";
+import type { ChildProcess } from "child_process";
+
+// Union type for both Bun and Node.js processes
+type AnyProcess = Subprocess | ChildProcess;
 
 interface TrackedProcess {
-  proc: Subprocess;
+  proc: AnyProcess;
   command: string;
   startedAt: Date;
   timeout?: ReturnType<typeof setTimeout>;
+}
+
+// Type guard to check if it's a Bun subprocess
+function isBunProcess(proc: AnyProcess): proc is Subprocess {
+  return 'exited' in proc && proc.exited instanceof Promise;
 }
 
 export class ProcessManager {
@@ -18,9 +27,9 @@ export class ProcessManager {
   }
 
   /**
-   * Track a spawned process
+   * Track a spawned process (supports both Bun and Node.js processes)
    */
-  track(proc: Subprocess, command: string, timeoutMs?: number): TrackedProcess {
+  track(proc: AnyProcess, command: string, timeoutMs?: number): TrackedProcess {
     const tracked: TrackedProcess = {
       proc,
       command,
@@ -37,11 +46,22 @@ export class ProcessManager {
     }
 
     // Clean up when process exits
-    proc.exited.then(() => {
-      this.remove(tracked);
-    }).catch(() => {
-      this.remove(tracked);
-    });
+    if (isBunProcess(proc)) {
+      // Bun subprocess
+      proc.exited.then(() => {
+        this.remove(tracked);
+      }).catch(() => {
+        this.remove(tracked);
+      });
+    } else {
+      // Node.js ChildProcess
+      proc.on('exit', () => {
+        this.remove(tracked);
+      });
+      proc.on('error', () => {
+        this.remove(tracked);
+      });
+    }
 
     this.activeProcesses.add(tracked);
     return tracked;
