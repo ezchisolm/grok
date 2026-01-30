@@ -1,10 +1,9 @@
-import { spawn } from 'bun';
 import { existsSync } from 'fs';
 import { Readable } from 'stream';
 import { StreamType } from '@discordjs/voice';
 import path from 'path';
 import { globalProcessManager } from '../utils/process-manager';
-import { spawn as nodeSpawn } from 'child_process';
+import { spawn } from 'child_process';
 
 // Debug mode - set DEBUG=ytdlp to enable verbose logging
 const DEBUG = process.env.DEBUG === 'ytdlp' || process.env.DEBUG === '*';
@@ -122,24 +121,37 @@ export async function search(query: string, limit: number = 1): Promise<VideoDet
 
         log(`Spawning search process`);
         
-        const proc = spawn({
-            cmd: [YTDLP_PATH, ...args],
-            stdout: 'pipe',
-            stderr: 'pipe',
-            stdin: 'ignore'
+        const proc = spawn(YTDLP_PATH, args, {
+            stdio: ['ignore', 'pipe', 'pipe']
         });
 
         // Track the process
         const command = `yt-dlp search "${query.substring(0, 30)}..."`;
-        const tracked = globalProcessManager.track(proc, command, 30000);
+        const tracked = globalProcessManager.track(
+            { pid: proc.pid!, kill: (signal: number) => proc.kill(signal) },
+            command,
+            30000
+        );
 
         try {
             const [stdout, stderr] = await Promise.all([
-                new Response(proc.stdout).text(),
-                new Response(proc.stderr).text()
+                new Promise<string>((resolve, reject) => {
+                    let data = '';
+                    proc.stdout!.on('data', (chunk) => data += chunk);
+                    proc.stdout!.on('end', () => resolve(data));
+                    proc.stdout!.on('error', reject);
+                }),
+                new Promise<string>((resolve) => {
+                    let data = '';
+                    proc.stderr!.on('data', (chunk) => data += chunk);
+                    proc.stderr!.on('end', () => resolve(data));
+                    proc.stderr!.on('error', () => resolve(''));
+                })
             ]);
 
-            const exitCode = await proc.exited;
+            const exitCode = await new Promise<number>((resolve) => {
+                proc.on('exit', (code) => resolve(code ?? 1));
+            });
             globalProcessManager.remove(tracked);
 
             if (exitCode !== 0) {
@@ -204,23 +216,36 @@ export async function extractStreamUrl(url: string): Promise<string> {
 
     log(`Extracting stream URL for: ${url}`);
 
-    const proc = spawn({
-        cmd: [YTDLP_PATH, ...args],
-        stdout: 'pipe',
-        stderr: 'pipe',
-        stdin: 'ignore'
+    const proc = spawn(YTDLP_PATH, args, {
+        stdio: ['ignore', 'pipe', 'pipe']
     });
 
     const command = `yt-dlp extract-url "${url.substring(0, 50)}..."`;
-    const tracked = globalProcessManager.track(proc, command, 30000);
+    const tracked = globalProcessManager.track(
+        { pid: proc.pid!, kill: (signal: number) => proc.kill(signal) },
+        command,
+        30000
+    );
 
     try {
         const [stdout, stderr] = await Promise.all([
-            new Response(proc.stdout).text(),
-            new Response(proc.stderr).text()
+            new Promise<string>((resolve, reject) => {
+                let data = '';
+                proc.stdout!.on('data', (chunk) => data += chunk);
+                proc.stdout!.on('end', () => resolve(data));
+                proc.stdout!.on('error', reject);
+            }),
+            new Promise<string>((resolve) => {
+                let data = '';
+                proc.stderr!.on('data', (chunk) => data += chunk);
+                proc.stderr!.on('end', () => resolve(data));
+                proc.stderr!.on('error', () => resolve(''));
+            })
         ]);
 
-        const exitCode = await proc.exited;
+        const exitCode = await new Promise<number>((resolve) => {
+            proc.on('exit', (code) => resolve(code ?? 1));
+        });
         globalProcessManager.remove(tracked);
 
         if (exitCode !== 0) {
@@ -285,15 +310,11 @@ export async function createStream(url: string): Promise<StreamResult> {
 
         log(`Creating stream for: ${url}`);
         
-        // Spawn yt-dlp with Bun
-        const ytdlpProc = spawn({
-            cmd: [YTDLP_PATH, ...ytdlpArgs],
-            stdout: 'pipe',
-            stderr: 'pipe',
-            stdin: 'ignore'
+        // Spawn both processes using Node.js child_process for proper piping
+        const ytdlpProc = nodeSpawn(YTDLP_PATH, ytdlpArgs, {
+            stdio: ['ignore', 'pipe', 'pipe']
         });
 
-        // Spawn FFmpeg with Node.js child_process for proper stdin/stdout piping
         const ffmpegProc = nodeSpawn('ffmpeg', FFMPEG_ARGS, {
             stdio: ['pipe', 'pipe', 'pipe']
         });
@@ -311,39 +332,12 @@ export async function createStream(url: string): Promise<StreamResult> {
         let ffmpegError = '';
 
         // Pipe yt-dlp stdout to FFmpeg stdin
-        const webStream = ytdlpProc.stdout;
-        const reader = webStream.getReader();
-        
-        const pipeToFfmpeg = async () => {
-            try {
-                while (true) {
-                    const { done, value } = await reader.read();
-                    if (done) {
-                        ffmpegProc.stdin!.end();
-                        break;
-                    }
-                    ffmpegProc.stdin!.write(Buffer.from(value));
-                }
-            } catch (err) {
-                log('Pipe error:', err);
-            }
-        };
+        ytdlpProc.stdout!.pipe(ffmpegProc.stdin!);
 
         // Collect yt-dlp stderr
-        const readYtdlpStderr = async () => {
-            const stderrReader = ytdlpProc.stderr.getReader();
-            try {
-                while (true) {
-                    const { done, value } = await stderrReader.read();
-                    if (done) break;
-                    ytdlpError += new TextDecoder().decode(value);
-                }
-            } catch { /* ignore */ }
-        };
-
-        // Start piping and reading
-        pipeToFfmpeg();
-        readYtdlpStderr();
+        ytdlpProc.stderr!.on('data', (data: Buffer) => {
+            ytdlpError += data.toString();
+        });
 
         // Collect FFmpeg stderr
         ffmpegProc.stderr!.on('data', (data: Buffer) => {
@@ -354,16 +348,19 @@ export async function createStream(url: string): Promise<StreamResult> {
             }
         });
 
-        // Handle process exits
-        ytdlpProc.exited.then((exitCode: number) => {
+        // Handle yt-dlp exit
+        ytdlpProc.on('exit', (exitCode: number | null) => {
             if (exitCode !== 0 && !hasResolved) {
                 log(`yt-dlp exited with code ${exitCode}: ${ytdlpError}`);
             }
-        }).catch(() => { /* ignore */ });
+            // Close FFmpeg stdin when yt-dlp finishes
+            ffmpegProc.stdin!.end();
+        });
 
         ffmpegProc.on('error', (err: Error) => {
             if (!hasResolved) {
                 hasResolved = true;
+                ytdlpProc.kill();
                 globalProcessManager.remove(tracked);
                 reject(new Error(`Failed to spawn FFmpeg: ${err.message}`));
             }
@@ -392,6 +389,7 @@ export async function createStream(url: string): Promise<StreamResult> {
         ffmpegProc.stdout!.on('error', (err: Error) => {
             if (!hasResolved) {
                 hasResolved = true;
+                ytdlpProc.kill();
                 ffmpegProc.kill();
                 globalProcessManager.remove(tracked);
                 reject(new Error(`Stream error: ${err.message}`));
@@ -407,37 +405,12 @@ export async function createStream(url: string): Promise<StreamResult> {
         setTimeout(() => {
             if (!hasResolved) {
                 hasResolved = true;
+                ytdlpProc.kill();
                 ffmpegProc.kill();
                 globalProcessManager.remove(tracked);
                 reject(new Error('Timeout waiting for audio stream'));
             }
         }, 15000);
-    });
-}
-
-/**
- * Converts a Web API ReadableStream to a Node.js Readable stream
- * Required for compatibility with @discordjs/voice
- */
-function webStreamToNodeStream(webStream: ReadableStream<Uint8Array>): Readable {
-    const reader = webStream.getReader();
-    
-    return new Readable({
-        read() {
-            reader.read().then(({ done, value }) => {
-                if (done) {
-                    this.push(null);
-                } else {
-                    this.push(Buffer.from(value));
-                }
-            }).catch((err) => {
-                this.destroy(err);
-            });
-        },
-        destroy() {
-            reader.releaseLock();
-            return this;
-        }
     });
 }
 
