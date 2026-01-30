@@ -1,6 +1,6 @@
 import { SlashCommandBuilder, ChannelType, GuildMember, MessageFlags } from "discord.js";
 import type { BotCommand } from "./types";
-import { formatDuration, resolveTrack } from "../music/youtube";
+import { formatDuration, resolveTrack, translateError } from "../music/youtube";
 
 const play: BotCommand = {
   data: new SlashCommandBuilder()
@@ -61,12 +61,12 @@ const play: BotCommand = {
       logger.info(`[Play] Reply edited`);
     } catch (error) {
       logger.error(`Failed to execute /play: ${(error as Error).message}`);
-      const message = error instanceof Error ? error.message : "Unknown error";
+      const userMessage = translateError(error);
 
       if (interaction.deferred || interaction.replied) {
-        await interaction.editReply({ content: `Sorry, I couldn't play that: ${message}` });
+        await interaction.editReply({ content: userMessage });
       } else {
-        await interaction.reply({ content: `Sorry, I couldn't play that: ${message}`, flags: MessageFlags.Ephemeral });
+        await interaction.reply({ content: userMessage, flags: MessageFlags.Ephemeral });
       }
     }
   },

@@ -6,7 +6,7 @@ This repository contains a Discord music bot named "Grok", built with TypeScript
 ## Key Dependencies
 - `discord.js`: For Discord API interactions.
 - `@discordjs/voice`: For voice channel handling.
-- `play-dl`: For YouTube audio extraction.
+- `yt-dlp`: For YouTube audio extraction and search (binary auto-downloaded via postinstall).
 - `ffmpeg-static`: For audio processing.
 - Testing: `vitest` for unit tests.
 
@@ -20,8 +20,10 @@ This repository contains a Discord music bot named "Grok", built with TypeScript
 ## Development Guidelines
 - Use TypeScript for all code.
 - Follow ES modules (`type: "module"` in package.json).
-- Run tests with `npm test` before commits.
-- Build with `npm run build` and deploy commands with `npm run deploy`.
+- Install dependencies with `bun install`.
+- Run tests with `bun test` before commits.
+- Build with `bun run build` and deploy commands with `bun run deploy`.
+- Commit both `package.json` and `bun.lock` together.
 
 ## Context7 MCP Usage
 Always use context7 when I need code generation, setup or
