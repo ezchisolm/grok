@@ -261,10 +261,9 @@ export async function extractStreamUrl(url: string): Promise<string> {
 
 /**
  * FFmpeg arguments for transcoding to OggOpus optimized for Discord streaming.
- * Using libopus encoder with proper timing for reliable playback.
+ * Optimized for low latency and reliable playback.
  */
 const FFMPEG_STREAM_ARGS = [
-    '-re',                    // Read input at native frame rate (important for streaming)
     '-i', 'pipe:0',           // Read from stdin
     '-analyzeduration', '0',  // Disable analysis for faster startup
     '-loglevel', 'error',     // Only show errors
@@ -275,9 +274,7 @@ const FFMPEG_STREAM_ARGS = [
     '-ac', '2',               // Channels: stereo
     '-b:a', '128k',           // Bitrate: 128kbps
     '-application', 'audio',  // Opus audio application
-    '-vbr', 'on',             // Variable bitrate
-    '-frame_duration', '20',  // Frame duration: 20ms
-    '-packet_loss', '1',      // Expect some packet loss
+    '-frame_duration', '60',  // Frame duration: 60ms (more stable than 20ms)
     'pipe:1',                 // Output to stdout
 ];
 
