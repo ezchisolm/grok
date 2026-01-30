@@ -12,7 +12,7 @@ A private Discord music bot that can search for songs on YouTube and play them i
 
 ## Prerequisites
 
-Node.js v18+ and npm (recommended)
+[Bun](https://bun.sh/) runtime (required)
 - A Discord bot token from the [Discord Developer Portal](https://discord.com/developers/applications)
 - FFmpeg (automatically included via `ffmpeg-static` dependency)
 
@@ -26,7 +26,7 @@ Node.js v18+ and npm (recommended)
 
 2. **Install dependencies**
    ```bash
-   npm install
+   bun install
    ```
 
 3. **Configure environment variables**
@@ -50,17 +50,17 @@ Node.js v18+ and npm (recommended)
 
 4. **Build the bot**
    ```bash
-   npm run build
+   bun run build
    ```
 
 5. **Deploy slash commands**
    ```bash
-   npm run deploy
+   bun run deploy
    ```
 
 6. **Start the bot**
    ```bash
-   npm run dev
+   bun run dev
    ```
 
 ## Commands
@@ -87,18 +87,58 @@ The bot uses Discord slash commands:
 
 Run in development mode with hot reload:
 ```bash
-npm run dev
+bun run dev
 ```
 
 Run tests:
 ```bash
-npm test
+bun test
 ```
 
 Build TypeScript:
 ```bash
-npm run build
+bun run build
 ```
+
+## VPS Deployment with PM2
+
+For running the bot on a VPS with process management (auto-restart on crash, etc.):
+
+1. **Install PM2 globally**
+   ```bash
+   bun add -g pm2
+   ```
+
+2. **Start the bot with PM2**
+   ```bash
+   pm2 start ecosystem.config.cjs
+   ```
+
+3. **View logs**
+   ```bash
+   pm2 logs grok-music
+   ```
+
+4. **Monitor processes**
+   ```bash
+   pm2 monit
+   ```
+
+5. **Stop the bot**
+   ```bash
+   pm2 stop grok-music
+   ```
+
+6. **Restart the bot**
+   ```bash
+   pm2 restart grok-music
+   ```
+
+7. **Save PM2 config to auto-start on boot**
+   ```bash
+   pm2 save
+   pm2 startup
+   ```
 
 ## Project Structure
 
@@ -129,4 +169,4 @@ Private use only.
 
 ---
 
-This project was originally created using `bun init` in bun v1.3.2 but has been converted to use Node.js and npm.
+This project uses Bun runtime for fast execution.
