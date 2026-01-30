@@ -61,6 +61,7 @@ export class GuildMusicPlayer {
     this.player = createAudioPlayer({
       behaviors: {
         noSubscriber: NoSubscriberBehavior.Pause,
+        maxMissedFrames: 5,  // Limit missed frames for faster error recovery
       },
     });
 
@@ -334,8 +335,12 @@ export class GuildMusicPlayer {
     await this.startNext();
   }
 
-  private handlePlaybackError(error: Error): void {
-    this.logger.error(`Playback error in guild ${this.guildId}: ${error.message}`);
+  private handlePlaybackError(error: Error & { resource?: { metadata?: { title?: string; url?: string } } }): void {
+    // Enhanced error logging with metadata if available
+    const resourceInfo = error.resource?.metadata 
+      ? ` | Track: "${error.resource.metadata.title}"` 
+      : '';
+    this.logger.error(`Playback error in guild ${this.guildId}${resourceInfo}: ${error.message}`);
     
     if (this.retryCount < this.maxRetries) {
       this.retryCount++;
@@ -484,10 +489,16 @@ export class GuildMusicPlayer {
       // Clear prebuffered stream as we're using it now
       this.prebufferedStream = undefined;
       
-      // Create resource with inlineVolume if volume is not 100%
+      // Create resource with metadata for better error tracking
+      // Per Discord.js docs: metadata helps identify resources in error handlers
       const resource = createAudioResource(stream.stream, {
         inputType: stream.type,
         inlineVolume: this.volume !== 1.0,
+        metadata: {
+          title: next.title,
+          url: next.url,
+          guildId: this.guildId,
+        },
       });
 
       // Apply volume if using inlineVolume

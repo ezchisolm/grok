@@ -1,9 +1,8 @@
 import { existsSync } from 'fs';
-import { Readable } from 'stream';
 import { StreamType } from '@discordjs/voice';
 import path from 'path';
 import { globalProcessManager } from '../utils/process-manager';
-import { spawn } from 'child_process';
+import { spawn, type ChildProcess } from 'child_process';
 
 // Debug mode - set DEBUG=ytdlp to enable verbose logging
 const DEBUG = process.env.DEBUG === 'ytdlp' || process.env.DEBUG === '*';
@@ -269,34 +268,22 @@ export async function extractStreamUrl(url: string): Promise<string> {
 }
 
 /**
- * FFmpeg arguments for transcoding to Opus Ogg format for Discord
- * Uses optimized settings for voice streaming
- */
-const FFMPEG_ARGS = [
-    '-i', 'pipe:0',           // Read from stdin
-    '-analyzeduration', '0',  // Disable analysis for faster startup
-    '-loglevel', '0',         // Silence logs
-    '-f', 'opus',             // Output format: Ogg Opus
-    '-ar', '48000',           // Sample rate: 48kHz (Discord requirement)
-    '-ac', '2',               // Channels: stereo
-    '-b:a', '128k',           // Bitrate: 128kbps
-    '-application', 'audio',  // Opus audio application
-    '-frame_duration', '20',  // Frame duration: 20ms
-    'pipe:1',                 // Output to stdout
-];
-
-/**
  * Create an audio stream from a YouTube URL.
- * Uses yt-dlp with FFmpeg transcoding for reliable Discord compatibility.
+ * 
+ * OPTIMIZATION: Uses direct WebM/Opus stream without FFmpeg transcoding.
+ * YouTube serves audio in WebM container with Opus codec, which is exactly
+ * what Discord needs. Transcoding would waste CPU for no benefit.
+ * 
+ * Per Discord.js docs: Use StreamType.WebmOpus for WebM/Opus streams.
  */
 export async function createStream(url: string): Promise<StreamResult> {
     return new Promise((resolve, reject) => {
-        // yt-dlp args to output audio to stdout
+        // yt-dlp args: output WebM/Opus directly (no transcoding needed)
         const ytdlpArgs = [
             ...YTDLP_BASE_ARGS,
-            '--format', 'bestaudio[ext=webm]/bestaudio/best',
+            '--format', 'bestaudio[ext=webm]/bestaudio[ext=m4a]/bestaudio/best',
             '-q',
-            '--buffer-size', '16K',
+            '--buffer-size', '32K',
             '-o', '-',
         ];
 
@@ -308,96 +295,76 @@ export async function createStream(url: string): Promise<StreamResult> {
 
         ytdlpArgs.push(url);
 
-        log(`Creating stream for: ${url}`);
+        log(`Creating WebM/Opus stream for: ${url}`);
         
-        // Spawn both processes using Node.js child_process for proper piping
-        const ytdlpProc = nodeSpawn(YTDLP_PATH, ytdlpArgs, {
+        const proc = spawn(YTDLP_PATH, ytdlpArgs, {
             stdio: ['ignore', 'pipe', 'pipe']
-        });
+        }) as ChildProcess;
 
-        const ffmpegProc = nodeSpawn('ffmpeg', FFMPEG_ARGS, {
-            stdio: ['pipe', 'pipe', 'pipe']
-        });
-
-        // Track the FFmpeg process
-        const command = `yt-dlp | ffmpeg "${url.substring(0, 50)}..."`;
+        // Track the process
+        const command = `yt-dlp stream "${url.substring(0, 50)}..."`;
         const tracked = globalProcessManager.track(
-            { pid: ffmpegProc.pid!, kill: (signal: number) => ffmpegProc.kill(signal) },
+            { pid: proc.pid!, kill: (signal: number) => proc.kill(signal) },
             command,
             60000
         );
 
         let hasResolved = false;
-        let ytdlpError = '';
-        let ffmpegError = '';
+        let stderr = '';
 
-        // Pipe yt-dlp stdout to FFmpeg stdin
-        ytdlpProc.stdout!.pipe(ffmpegProc.stdin!);
-
-        // Collect yt-dlp stderr
-        ytdlpProc.stderr!.on('data', (data: Buffer) => {
-            ytdlpError += data.toString();
-        });
-
-        // Collect FFmpeg stderr
-        ffmpegProc.stderr!.on('data', (data: Buffer) => {
+        // Collect stderr for error handling
+        proc.stderr!.on('data', (data: Buffer) => {
             const chunk = data.toString();
-            ffmpegError += chunk;
+            stderr += chunk;
             if (DEBUG) {
                 process.stderr.write(chunk);
             }
         });
 
-        // Handle yt-dlp exit
-        ytdlpProc.on('exit', (exitCode: number | null) => {
-            if (exitCode !== 0 && !hasResolved) {
-                log(`yt-dlp exited with code ${exitCode}: ${ytdlpError}`);
-            }
-            // Close FFmpeg stdin when yt-dlp finishes
-            ffmpegProc.stdin!.end();
-        });
-
-        ffmpegProc.on('error', (err: Error) => {
+        proc.on('error', (err: Error) => {
             if (!hasResolved) {
                 hasResolved = true;
-                ytdlpProc.kill();
                 globalProcessManager.remove(tracked);
-                reject(new Error(`Failed to spawn FFmpeg: ${err.message}`));
+                reject(new Error(`Failed to spawn yt-dlp: ${err.message}`));
             }
         });
 
-        ffmpegProc.on('exit', (exitCode: number | null) => {
+        proc.on('exit', (exitCode: number | null) => {
             if (!hasResolved && exitCode !== 0 && exitCode !== null) {
                 hasResolved = true;
                 globalProcessManager.remove(tracked);
-                reject(new Error(`FFmpeg failed with code ${exitCode}: ${ffmpegError.slice(0, 200)}`));
+                try {
+                    handleYtDlpError(stderr, exitCode);
+                } catch (error) {
+                    reject(error);
+                }
             }
         });
 
-        // Use FFmpeg stdout as the audio stream
-        ffmpegProc.stdout!.once('data', () => {
+        // Use stdout directly as the audio stream
+        // WebM/Opus format is natively supported by Discord
+        proc.stdout!.once('data', () => {
             if (!hasResolved) {
                 hasResolved = true;
-                log(`Stream started successfully`);
+                log(`WebM/Opus stream started successfully`);
                 resolve({
-                    stream: ffmpegProc.stdout!,
-                    type: StreamType.OggOpus
+                    stream: proc.stdout!,
+                    type: StreamType.WebmOpus  // Direct WebM/Opus - no transcoding needed
                 });
             }
         });
 
-        ffmpegProc.stdout!.on('error', (err: Error) => {
+        proc.stdout!.on('error', (err: Error) => {
             if (!hasResolved) {
                 hasResolved = true;
-                ytdlpProc.kill();
-                ffmpegProc.kill();
+                proc.kill();
                 globalProcessManager.remove(tracked);
                 reject(new Error(`Stream error: ${err.message}`));
             }
         });
 
         // Cleanup tracking when stream ends
-        ffmpegProc.stdout!.on('end', () => {
+        proc.stdout!.on('end', () => {
             globalProcessManager.remove(tracked);
         });
 
@@ -405,8 +372,7 @@ export async function createStream(url: string): Promise<StreamResult> {
         setTimeout(() => {
             if (!hasResolved) {
                 hasResolved = true;
-                ytdlpProc.kill();
-                ffmpegProc.kill();
+                proc.kill();
                 globalProcessManager.remove(tracked);
                 reject(new Error('Timeout waiting for audio stream'));
             }
