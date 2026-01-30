@@ -31,6 +31,21 @@ process.on("uncaughtException", (error) => {
   logger.error(`Uncaught exception: ${(error as Error).message}`);
 });
 
+process.on("warning", (warning) => {
+  type WarningWithCode = Error & { code?: string };
+  const w = warning as WarningWithCode;
+
+  // @discordjs/voice can occasionally call setTimeout() with a negative delay when
+  // the audio cycle step falls behind schedule under load. Node/Bun clamps this
+  // to 1ms but emits a TimeoutNegativeWarning, which can spam PM2 logs.
+  if (w.name === "TimeoutNegativeWarning" || w.code === "TimeoutNegativeWarning") {
+    return;
+  }
+
+  const codeSuffix = w.code ? ` (${w.code})` : "";
+  logger.warn(`${w.name}${codeSuffix}: ${w.message}`);
+});
+
 client.once(Events.ClientReady, (c) => {
   logger.info(`Logged in as ${c.user.tag}`);
 });
