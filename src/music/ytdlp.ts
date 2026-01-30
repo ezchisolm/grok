@@ -4,6 +4,7 @@ import { Readable } from 'stream';
 import { StreamType } from '@discordjs/voice';
 import path from 'path';
 import { globalProcessManager } from '../utils/process-manager';
+import { spawn as nodeSpawn } from 'child_process';
 
 // Debug mode - set DEBUG=ytdlp to enable verbose logging
 const DEBUG = process.env.DEBUG === 'ytdlp' || process.env.DEBUG === '*';
@@ -265,7 +266,7 @@ const FFMPEG_ARGS = [
  */
 export async function createStream(url: string): Promise<StreamResult> {
     return new Promise((resolve, reject) => {
-        // First, spawn yt-dlp to get audio
+        // yt-dlp args to output audio to stdout
         const ytdlpArgs = [
             ...YTDLP_BASE_ARGS,
             '--format', 'bestaudio[ext=webm]/bestaudio/best',
@@ -284,6 +285,7 @@ export async function createStream(url: string): Promise<StreamResult> {
 
         log(`Creating stream for: ${url}`);
         
+        // Spawn yt-dlp with Bun
         const ytdlpProc = spawn({
             cmd: [YTDLP_PATH, ...ytdlpArgs],
             stdout: 'pipe',
@@ -291,35 +293,36 @@ export async function createStream(url: string): Promise<StreamResult> {
             stdin: 'ignore'
         });
 
-        // Then pipe through FFmpeg for transcoding
-        const ffmpegProc = spawn({
-            cmd: ['ffmpeg', ...FFMPEG_ARGS],
-            stdout: 'pipe',
-            stderr: 'pipe',
-            stdin: 'pipe'
+        // Spawn FFmpeg with Node.js child_process for proper stdin/stdout piping
+        const ffmpegProc = nodeSpawn('ffmpeg', FFMPEG_ARGS, {
+            stdio: ['pipe', 'pipe', 'pipe']
         });
 
-        // Track both processes
+        // Track the FFmpeg process
         const command = `yt-dlp | ffmpeg "${url.substring(0, 50)}..."`;
-        const tracked = globalProcessManager.track(ffmpegProc, command, 60000);
+        const tracked = globalProcessManager.track(
+            { pid: ffmpegProc.pid!, kill: (signal: number) => ffmpegProc.kill(signal) },
+            command,
+            60000
+        );
 
         let hasResolved = false;
         let ytdlpError = '';
         let ffmpegError = '';
 
         // Pipe yt-dlp stdout to FFmpeg stdin
-        const pipeStreams = async () => {
-            const reader = ytdlpProc.stdout.getReader();
-            const writer = ffmpegProc.stdin.getWriter();
-            
+        const webStream = ytdlpProc.stdout;
+        const reader = webStream.getReader();
+        
+        const pipeToFfmpeg = async () => {
             try {
                 while (true) {
                     const { done, value } = await reader.read();
                     if (done) {
-                        await writer.close();
+                        ffmpegProc.stdin!.end();
                         break;
                     }
-                    await writer.write(value);
+                    ffmpegProc.stdin!.write(Buffer.from(value));
                 }
             } catch (err) {
                 log('Pipe error:', err);
@@ -328,51 +331,37 @@ export async function createStream(url: string): Promise<StreamResult> {
 
         // Collect yt-dlp stderr
         const readYtdlpStderr = async () => {
-            const reader = ytdlpProc.stderr.getReader();
+            const stderrReader = ytdlpProc.stderr.getReader();
             try {
                 while (true) {
-                    const { done, value } = await reader.read();
+                    const { done, value } = await stderrReader.read();
                     if (done) break;
                     ytdlpError += new TextDecoder().decode(value);
                 }
             } catch { /* ignore */ }
         };
 
-        // Collect FFmpeg stderr
-        const readFfmpegStderr = async () => {
-            const reader = ffmpegProc.stderr.getReader();
-            try {
-                while (true) {
-                    const { done, value } = await reader.read();
-                    if (done) break;
-                    const chunk = new TextDecoder().decode(value);
-                    ffmpegError += chunk;
-                    if (DEBUG) {
-                        process.stderr.write(chunk);
-                    }
-                }
-            } catch { /* ignore */ }
-        };
-
         // Start piping and reading
-        pipeStreams();
+        pipeToFfmpeg();
         readYtdlpStderr();
-        readFfmpegStderr();
+
+        // Collect FFmpeg stderr
+        ffmpegProc.stderr!.on('data', (data: Buffer) => {
+            const chunk = data.toString();
+            ffmpegError += chunk;
+            if (DEBUG) {
+                process.stderr.write(chunk);
+            }
+        });
 
         // Handle process exits
         ytdlpProc.exited.then((exitCode: number) => {
             if (exitCode !== 0 && !hasResolved) {
-                globalProcessManager.kill(tracked, 9);
+                log(`yt-dlp exited with code ${exitCode}: ${ytdlpError}`);
             }
         }).catch(() => { /* ignore */ });
 
-        ffmpegProc.exited.then((exitCode: number) => {
-            if (!hasResolved && exitCode !== 0) {
-                hasResolved = true;
-                globalProcessManager.remove(tracked);
-                reject(new Error(`FFmpeg failed: ${ffmpegError.slice(0, 200)}`));
-            }
-        }).catch((err: Error) => {
+        ffmpegProc.on('error', (err: Error) => {
             if (!hasResolved) {
                 hasResolved = true;
                 globalProcessManager.remove(tracked);
@@ -380,30 +369,37 @@ export async function createStream(url: string): Promise<StreamResult> {
             }
         });
 
-        // Convert FFmpeg output to Node.js stream
-        const nodeStream = webStreamToNodeStream(ffmpegProc.stdout);
-        
-        nodeStream.once('data', () => {
+        ffmpegProc.on('exit', (exitCode: number | null) => {
+            if (!hasResolved && exitCode !== 0 && exitCode !== null) {
+                hasResolved = true;
+                globalProcessManager.remove(tracked);
+                reject(new Error(`FFmpeg failed with code ${exitCode}: ${ffmpegError.slice(0, 200)}`));
+            }
+        });
+
+        // Use FFmpeg stdout as the audio stream
+        ffmpegProc.stdout!.once('data', () => {
             if (!hasResolved) {
                 hasResolved = true;
                 log(`Stream started successfully`);
                 resolve({
-                    stream: nodeStream,
-                    type: StreamType.OggOpus  // FFmpeg outputs Ogg Opus
+                    stream: ffmpegProc.stdout!,
+                    type: StreamType.OggOpus
                 });
             }
         });
 
-        nodeStream.once('error', (err) => {
+        ffmpegProc.stdout!.on('error', (err: Error) => {
             if (!hasResolved) {
                 hasResolved = true;
-                globalProcessManager.kill(tracked, 9);
+                ffmpegProc.kill();
+                globalProcessManager.remove(tracked);
                 reject(new Error(`Stream error: ${err.message}`));
             }
         });
 
         // Cleanup tracking when stream ends
-        nodeStream.once('end', () => {
+        ffmpegProc.stdout!.on('end', () => {
             globalProcessManager.remove(tracked);
         });
 
@@ -411,7 +407,8 @@ export async function createStream(url: string): Promise<StreamResult> {
         setTimeout(() => {
             if (!hasResolved) {
                 hasResolved = true;
-                globalProcessManager.kill(tracked, 9);
+                ffmpegProc.kill();
+                globalProcessManager.remove(tracked);
                 reject(new Error('Timeout waiting for audio stream'));
             }
         }, 15000);
