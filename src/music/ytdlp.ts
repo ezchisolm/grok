@@ -126,11 +126,7 @@ export async function search(query: string, limit: number = 1): Promise<VideoDet
 
         // Track the process
         const command = `yt-dlp search "${query.substring(0, 30)}..."`;
-        const tracked = globalProcessManager.track(
-            { pid: proc.pid!, kill: (signal: number) => proc.kill(signal) },
-            command,
-            30000
-        );
+        const tracked = globalProcessManager.track(proc, command, 30000);
 
         try {
             const [stdout, stderr] = await Promise.all([
@@ -220,11 +216,7 @@ export async function extractStreamUrl(url: string): Promise<string> {
     });
 
     const command = `yt-dlp extract-url "${url.substring(0, 50)}..."`;
-    const tracked = globalProcessManager.track(
-        { pid: proc.pid!, kill: (signal: number) => proc.kill(signal) },
-        command,
-        30000
-    );
+    const tracked = globalProcessManager.track(proc, command, 30000);
 
     try {
         const [stdout, stderr] = await Promise.all([
@@ -303,11 +295,7 @@ export async function createStream(url: string): Promise<StreamResult> {
 
         // Track the process
         const command = `yt-dlp stream "${url.substring(0, 50)}..."`;
-        const tracked = globalProcessManager.track(
-            { pid: proc.pid!, kill: (signal: number) => proc.kill(signal) },
-            command,
-            60000
-        );
+        const tracked = globalProcessManager.track(proc, command, 60000);
 
         let hasResolved = false;
         let stderr = '';

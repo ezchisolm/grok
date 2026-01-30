@@ -55,10 +55,11 @@ export class ProcessManager {
       });
     } else {
       // Node.js ChildProcess
-      proc.on('exit', () => {
+      // Use once() instead of on() to prevent memory leaks
+      proc.once('exit', () => {
         this.remove(tracked);
       });
-      proc.on('error', () => {
+      proc.once('error', () => {
         this.remove(tracked);
       });
     }
